@@ -17,15 +17,20 @@ It's a static site: plain HTML, CSS and vanilla JavaScript. There's no build ste
   - Lactulose warnings: "STOP if diarrhoea" and "can increase to 1 ml if no poo by day 2".
   - Gabapentin: once 2 doses have been given in 24 hours, the third shows as *optional* (only if she's still straining).
   - Metacam is shown as **PAUSED**: "Stopped by vet for 24–48 hours, ask before restarting".
-- **Symptom tracker** with one tap per symptom: pooed, strained, blood in wee, diarrhoea, vomited, ate well, weed, and strained to wee with nothing coming.
-  - **Weed** opens a quick form: amount (small / medium / large), blood (defaults to *without blood*), an optional **photo** and a note. A wee with blood also raises the "call the vet" alert.
-  - You can add or replace a photo on any symptom entry from the Log (tap **Edit**). Tap a thumbnail to see it full size.
+- **Symptom tracker** with four buttons, each opening a quick form with an optional **photo** and a note:
+  - **Pooed**: solid or diarrhoea (default solid), blood or not (default no blood), on her own or needed help.
+  - **Weed**: small, medium or large, blood or not (default no blood), on her own or needed help.
+  - **Vomited**: photo and note.
+  - **Ate food**: wet, dry or both, on her own or needed help.
+  - Blood in poo or wee raises the "call the vet" alert. Diarrhoea triggers the "stop lactulose" warning.
+  - Entries logged with older versions of the app (e.g. "Strained", "Ate well") still show in the log as they were.
+  - Add or replace a photo on any entry from the Log (tap **Edit**). Tap a thumbnail to see it full size.
 - **48-hour review reminder**, counted from the first logged dose: "If pooing normally and no blood in wee, ask vet about stopping medication."
 - **Follow-up reminders** with editable dates: a urine sample in about 2 weeks and repeat bloods in 3–4 months.
 - **Log / history** of every dose and symptom, grouped by day, with editable times and notes.
 - **Settings** to edit medications (name, dose, interval, notes, paused) or add and remove them.
 - **Browser notifications** when a dose becomes due.
-- **PDF for the vet**: on the Log tab (or in Settings), tap **Create PDF for the vet**. Pick the period, choose whether to include photos and add an optional note, then share it via Mail or Messages, or save it to Files. The PDF has an at-a-glance section (with concerning entries in red), the medications, key dates, a daily summary table, the full log and the photos.
+- **PDF for the vet**: on the Log tab (or in Settings), tap **Create PDF for the vet**, pick the period and whether to include photos, then share it (Mail, Messages, Save to Files). The PDF lists the medications at the top, then the log as a simple timeline, oldest first, with photos next to their entries.
 - **Export / import JSON** to share the log with someone else (merge or replace).
 
 ## ⚠️ Notifications on iPhone
