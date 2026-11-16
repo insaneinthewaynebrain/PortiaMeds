@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#5b4bdb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Portia Meds">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>">
+  <title>Portia Meds</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>🐈 Portia Meds</h1>
+    <div id="clock" class="clock"></div>
+  </header>
+
+  <main>
+    <!-- TODAY -->
+    <section id="view-today" class="view active" aria-label="Today">
+      <div class="card vet-alert">
+        <h2>📞 Call the vet if…</h2>
+        <ul class="checklist">
+          <li>She is <strong>not pooing</strong></li>
+          <li>There is <strong>blood in her wee</strong></li>
+          <li>She is <strong>straining to wee with nothing passing</strong></li>
+        </ul>
+        <div id="vet-flags"></div>
+      </div>
+
+      <div id="overdue-banner" class="banner overdue hidden"></div>
+      <div id="review-card"></div>
+
+      <div id="med-list"></div>
+
+      <div class="card">
+        <h2>Quick symptom log</h2>
+        <div id="symptom-buttons-today" class="symptom-grid"></div>
+        <p id="last-poo" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h2>Follow-up reminders</h2>
+        <div id="followups"></div>
+      </div>
+
+      <div class="card">
+        <h2>Notifications</h2>
+        <p id="notify-status" class="muted"></p>
+        <button id="btn-notify" class="btn btn-secondary">Turn on dose notifications</button>
+        <p class="note">
+          <strong>iPhone note:</strong> iPhones only show these alerts while Portia Meds is
+          <strong>open</strong>, and only if it has been <strong>added to the Home Screen</strong>
+          (Safari → Share → “Add to Home Screen”, iOS 16.4 or later) and opened from there.
+          Don’t rely on notifications alone — set a phone alarm as a backup.
+        </p>
+      </div>
+    </section>
+
+    <!-- LOG -->
+    <section id="view-log" class="view" aria-label="Log">
+      <div class="card">
+        <h2>Dose &amp; symptom history</h2>
+        <div class="filter-row">
+          <label for="log-filter">Show</label>
+          <select id="log-filter">
+            <option value="all">Everything</option>
+            <option value="doses">Doses only</option>
+            <option value="symptoms">Symptoms only</option>
+          </select>
+        </div>
+        <div id="log-list"></div>
+      </div>
+    </section>
+
+    <!-- SYMPTOMS -->
+    <section id="view-symptoms" class="view" aria-label="Symptoms">
+      <div class="card">
+        <h2>Symptom tracker</h2>
+        <p class="muted">Tap to log right now. You can add a note or change the time in the Log afterwards.</p>
+        <div id="symptom-buttons" class="symptom-grid"></div>
+      </div>
+      <div class="card">
+        <h2>Last 48 hours</h2>
+        <div id="symptom-summary"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view" aria-label="Settings">
+      <div class="card">
+        <h2>Medications</h2>
+        <div id="med-settings"></div>
+        <button id="btn-add-med" class="btn btn-secondary">+ Add medication</button>
+      </div>
+
+      <div class="card">
+        <h2>Share / back up</h2>
+        <p class="muted">Export the whole log as a JSON file to send to someone else. They can import it on their phone.</p>
+        <button id="btn-export" class="btn">Export / share log (JSON)</button>
+        <label class="btn btn-secondary file-btn">
+          Import &amp; merge
+          <input type="file" id="import-merge" accept="application/json,.json">
+        </label>
+        <label class="btn btn-secondary file-btn">
+          Import &amp; replace everything
+          <input type="file" id="import-replace" accept="application/json,.json">
+        </label>
+        <p class="note">“Merge” keeps your entries and adds any new ones from the file. “Replace” wipes this phone’s data and uses the file instead.</p>
+      </div>
+
+      <div class="card danger-zone">
+        <h2>Reset</h2>
+        <button id="btn-reset" class="btn btn-danger">Delete all data on this device</button>
+      </div>
+
+      <p class="disclaimer">This app is a reminder aid only. Always follow your vet’s instructions.</p>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button data-view="today" class="tab active">💊<span>Today</span></button>
+    <button data-view="log" class="tab">📋<span>Log</span></button>
+    <button data-view="symptoms" class="tab">🩺<span>Symptoms</span></button>
+    <button data-view="settings" class="tab">⚙️<span>Settings</span></button>
+  </nav>
+
+  <!-- Edit dialog (reused) -->
+  <dialog id="dialog">
+    <form method="dialog" id="dialog-form">
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-secondary" formnovalidate>Cancel</button>
+        <button value="ok" class="btn" id="dialog-ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
