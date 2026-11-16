@@ -333,3 +333,32 @@ dialog h2 { margin: 0 0 8px; }
   z-index: 20;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Segmented choice (amount / blood) */
+.field > span { display: block; font-size: 0.95rem; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+div.field { margin: 12px 0 0; }
+.seg { display: flex; gap: 8px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label {
+  flex: 1;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  font-weight: 700;
+  cursor: pointer;
+}
+.seg input:checked + label { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.seg input:checked + label.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+.seg input:focus-visible + label { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Photos */
+.photo-preview img { display: block; max-width: 100%; max-height: 240px; border-radius: 12px; margin: 4px 0 8px; }
+.thumb { display: block; margin-top: 6px; padding: 0; border: none; background: none; cursor: pointer; }
+.thumb img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
+.photo-full { display: block; width: 100%; height: auto; border-radius: 12px; }
+.blood { color: var(--bad); font-weight: 800; }

@@ -17,7 +17,9 @@ It's a static site: plain HTML, CSS and vanilla JavaScript. There's no build ste
   - Lactulose warnings: "STOP if diarrhoea" and "can increase to 1 ml if no poo by day 2".
   - Gabapentin: once 2 doses have been given in 24 hours, the third shows as *optional* (only if she's still straining).
   - Metacam is shown as **PAUSED**: "Stopped by vet for 24–48 hours, ask before restarting".
-- **Symptom tracker** with one tap per symptom: pooed normally, strained, blood in wee, diarrhoea, vomited, ate well, weed normally, and strained to wee with nothing coming.
+- **Symptom tracker** with one tap per symptom: pooed normally, strained, blood in wee, diarrhoea, vomited, ate well, weed, and strained to wee with nothing coming.
+  - **Weed** opens a quick form: amount (small / medium / large), blood (defaults to *without blood*), an optional **photo** and a note. A wee with blood also raises the "call the vet" alert.
+  - You can add or replace a photo on any symptom entry from the Log (tap **Edit**). Tap a thumbnail to see it full size.
 - **48-hour review reminder**, counted from the first logged dose: "If pooing normally and no blood in wee, ask vet about stopping medication."
 - **Follow-up reminders** with editable dates: a urine sample in about 2 weeks and repeat bloods in 3–4 months.
 - **Log / history** of every dose and symptom, grouped by day, with editable times and notes.
@@ -39,7 +41,7 @@ iPhones only show web-app notifications if:
 
 Go to Settings → **Export / share log**. On iPhone this opens the share sheet (AirDrop, Messages and so on). On the other phone, open Portia Meds and go to Settings → **Import & merge**.
 
-All data lives only in each phone's browser storage (`localStorage`). Nothing is sent anywhere. Clearing Safari website data deletes it, so export a backup now and then.
+All data lives only in each phone's browser storage: the log in `localStorage`, and photos separately in IndexedDB so they can't fill up the log's space. Exports include the photos, so files with photos are bigger. Nothing is sent anywhere. Clearing Safari website data deletes it, so export a backup now and then.
 
 ## Files
 

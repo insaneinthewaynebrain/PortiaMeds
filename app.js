@@ -15,7 +15,9 @@
     { id: 'diarrhoea', label: 'Diarrhoea', emoji: '💧', tone: 'bad' },
     { id: 'vomited', label: 'Vomited', emoji: '🤮', tone: 'bad' },
     { id: 'ate_well', label: 'Ate well', emoji: '🍽️', tone: 'good' },
-    { id: 'wee_normal', label: 'Weed normally', emoji: '🚽', tone: 'good' },
+    // Kept the id 'wee_normal' so existing log entries still match. Entries logged before
+    // amount/blood were added have neither field and are shown with the old label.
+    { id: 'wee_normal', label: 'Weed', legacyLabel: 'Weed normally', emoji: '🚽', tone: 'good' },
     { id: 'wee_nothing', label: 'Strained to wee, nothing came', emoji: '🚫', tone: 'bad' }
   ];
   var SYMPTOM_BY_ID = {};
@@ -252,11 +254,12 @@
 
   /* ---------- dialog ---------- */
   var dialogHandler = null;
-  function openDialog(title, bodyHtml, onClose, okLabel) {
+  function openDialog(title, bodyHtml, onClose, okLabel, hideCancel) {
     var dlg = $('#dialog');
     $('#dialog-title').textContent = title;
     $('#dialog-body').innerHTML = bodyHtml;
     $('#dialog-ok').textContent = okLabel || 'Save';
+    $('#dialog-cancel').classList.toggle('hidden', !!hideCancel);
     dialogHandler = onClose;
     if (typeof dlg.showModal === 'function') dlg.showModal();
     else dlg.setAttribute('open', '');
@@ -314,6 +317,7 @@
     var entry = null;
     for (var i = 0; i < list.length; i++) if (list[i].id === id) entry = list[i];
     if (!entry) return;
+    if (kind === 'symptom') { symptomDialog(entry.type, entry); return; }
     var title, extra = '';
     if (kind === 'dose') {
       var med = medById(entry.medId);
@@ -346,14 +350,246 @@
     });
   }
 
+  /* ---------- photos (stored in IndexedDB, separate from the log) ---------- */
+  var PHOTO_DB = 'portiaMedsPhotos';
+  var dbPromise = null;
+  function db() {
+    if (!dbPromise) {
+      dbPromise = new Promise(function (resolve, reject) {
+        if (!window.indexedDB) { reject(new Error('Photo storage is not available in this browser.')); return; }
+        var req = indexedDB.open(PHOTO_DB, 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('photos'); };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+      dbPromise.catch(function () { dbPromise = null; });
+    }
+    return dbPromise;
+  }
+  function photoTx(mode, fn) {
+    return db().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var tx = d.transaction('photos', mode);
+        var store = tx.objectStore('photos');
+        var result;
+        var req = fn(store);
+        if (req) req.onsuccess = function () { result = req.result; };
+        tx.oncomplete = function () { resolve(result); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error('Photo save aborted (storage full?)')); };
+      });
+    });
+  }
+  function putPhoto(id, blob) { invalidatePhoto(id); return photoTx('readwrite', function (s) { return s.put(blob, id); }); }
+  function getPhoto(id) { return photoTx('readonly', function (s) { return s.get(id); }); }
+  function deletePhoto(id) { invalidatePhoto(id); return photoTx('readwrite', function (s) { return s.delete(id); }); }
+  function clearPhotos() { photoUrls = {}; return photoTx('readwrite', function (s) { return s.clear(); }); }
+  function photoEntries() {
+    return db().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var out = {};
+        var tx = d.transaction('photos', 'readonly');
+        var req = tx.objectStore('photos').openCursor();
+        req.onsuccess = function () {
+          var c = req.result;
+          if (c) { out[c.key] = c.value; c.continue(); }
+        };
+        tx.oncomplete = function () { resolve(out); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  var photoUrls = {};
+  function invalidatePhoto(id) {
+    if (photoUrls[id]) { URL.revokeObjectURL(photoUrls[id]); delete photoUrls[id]; }
+  }
+  function photoUrl(id) {
+    if (photoUrls[id]) return Promise.resolve(photoUrls[id]);
+    return getPhoto(id).then(function (blob) {
+      if (!blob) return null;
+      photoUrls[id] = URL.createObjectURL(blob);
+      return photoUrls[id];
+    });
+  }
+  function hydratePhotos(root) {
+    root.querySelectorAll('img[data-photo-id]').forEach(function (img) {
+      photoUrl(img.getAttribute('data-photo-id')).then(function (url) {
+        if (url) img.src = url; else img.alt = 'Photo missing on this device';
+      }).catch(function () { img.alt = 'Photo unavailable'; });
+    });
+  }
+  function viewPhoto(id) {
+    openDialog('Photo', '<img class="photo-full" data-photo-id="' + esc(id) + '" alt="Photo">', null, 'Close', true);
+    hydratePhotos($('#dialog-body'));
+  }
+
+  // Shrink a camera photo to a sensible size (max 1280px, JPEG) before storing it.
+  function compressImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var max = 1280;
+        var s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * s));
+        c.height = Math.max(1, Math.round(img.naturalHeight * s));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function (b) { if (b) resolve(b); else reject(new Error('Could not process that photo.')); }, 'image/jpeg', 0.75);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Could not read that photo.')); };
+      img.src = url;
+    });
+  }
+  function blobToDataURL(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+      r.readAsDataURL(blob);
+    });
+  }
+  function dataURLToBlob(dataUrl) {
+    var m = /^data:([^;,]+)?(;base64)?,(.*)$/.exec(dataUrl || '');
+    if (!m) return null;
+    var bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: m[1] || 'image/jpeg' });
+  }
+
   /* ---------- symptoms ---------- */
+  function symptomTitle(e) {
+    var sym = SYMPTOM_BY_ID[e.type] || { emoji: '•', label: e.type };
+    if (e.type === 'wee_normal') {
+      if (!e.amount && e.blood == null) return sym.emoji + ' ' + esc(sym.legacyLabel); // older entries
+      var parts = [];
+      if (e.amount) parts.push(esc(e.amount) + ' amount');
+      parts.push(e.blood ? '<span class="blood">with blood 🩸</span>' : 'no blood');
+      return sym.emoji + ' ' + esc(sym.label) + ' — ' + parts.join(', ');
+    }
+    return sym.emoji + ' ' + esc(sym.label);
+  }
+
+  function segHtml(name, options, current) {
+    return '<div class="seg" role="radiogroup">' + options.map(function (o) {
+      var id = 'seg-' + name + '-' + o.value;
+      return '<input type="radio" name="' + name + '" id="' + id + '" value="' + esc(o.value) + '"' + (current === o.value ? ' checked' : '') + '>' +
+        '<label for="' + id + '" class="' + (o.cls || '') + '">' + esc(o.label) + '</label>';
+    }).join('') + '</div>';
+  }
+
+  // Dialog for logging a new symptom (entry == null) or editing an existing one.
+  var pendingPhoto = null; // { blob } new photo chosen, or { remove: true }
+  function symptomDialog(type, entry) {
+    var isNew = !entry;
+    var sym = SYMPTOM_BY_ID[type] || { label: type };
+    var isWee = type === 'wee_normal';
+    pendingPhoto = null;
+    var initialTime = toLocalInput(isNew ? new Date() : new Date(entry.time));
+    var body = '<label class="field"><span>Time</span><input type="datetime-local" name="time" required value="' +
+      initialTime + '"></label>';
+    if (isWee) {
+      body += '<div class="field"><span>Amount</span>' + segHtml('amount', [
+        { value: 'Small', label: 'Small' }, { value: 'Medium', label: 'Medium' }, { value: 'Large', label: 'Large' }
+      ], entry ? entry.amount : '') + '</div>';
+      body += '<div class="field"><span>Blood</span>' + segHtml('blood', [
+        { value: 'no', label: 'Without blood' }, { value: 'yes', label: 'With blood 🩸', cls: 'bad' }
+      ], entry && entry.blood ? 'yes' : 'no') + '</div>';
+    }
+    var hasPhoto = !!(entry && entry.photoId);
+    body += '<div class="field"><span>Photo (optional)</span>' +
+      '<div class="photo-preview" id="photo-preview">' + (hasPhoto ? '<img data-photo-id="' + esc(entry.photoId) + '" alt="Photo">' : '') + '</div>' +
+      '<label class="btn btn-secondary file-btn" id="photo-pick">📷 ' + (hasPhoto ? 'Replace photo' : 'Take / add photo') +
+      '<input type="file" accept="image/*" name="photo"></label>' +
+      '<button type="button" class="btn btn-secondary btn-small' + (hasPhoto ? '' : ' hidden') + '" id="photo-remove" style="margin-top:8px">Remove photo</button>' +
+      '<div class="note" id="photo-status"></div></div>';
+    body += '<label class="field"><span>Note (optional)</span><textarea name="note">' + esc(entry ? entry.note : '') + '</textarea></label>';
+    if (!isNew) body += '<button value="delete" class="btn btn-danger" formnovalidate>Delete this entry</button>';
+
+    openDialog((isNew ? 'Log: ' : 'Edit: ') + sym.label, body, function (rv, dlg) {
+      var photo = pendingPhoto;
+      pendingPhoto = null;
+      if (rv === 'delete') {
+        if (!confirm('Delete this entry?')) return;
+        var idx = state.symptoms.indexOf(entry);
+        if (idx !== -1) state.symptoms.splice(idx, 1);
+        if (entry.photoId) deletePhoto(entry.photoId).catch(function () {});
+        save(); renderAll(); toast('Deleted');
+        return;
+      }
+      if (rv !== 'ok') return;
+      var e = entry || { id: uid(), type: type, time: new Date().toISOString(), note: '' };
+      var timeVal = dlg.querySelector('[name=time]').value;
+      var t = fromLocalInput(timeVal);
+      // Keep the exact current time (with seconds) if a new entry's time wasn't changed.
+      if (t && !(isNew && timeVal === initialTime)) e.time = t.toISOString();
+      e.note = dlg.querySelector('[name=note]').value.trim();
+      if (isWee) {
+        var amt = dlg.querySelector('[name=amount]:checked');
+        e.amount = amt ? amt.value : '';
+        var bl = dlg.querySelector('[name=blood]:checked');
+        e.blood = !!(bl && bl.value === 'yes');
+      }
+      if (isNew) state.symptoms.push(e);
+      var done = function (msg) { save(); renderAll(); toast(msg); };
+      if (photo && photo.blob) {
+        var pid = e.photoId || e.id;
+        putPhoto(pid, photo.blob).then(function () {
+          e.photoId = pid;
+          done(isNew ? 'Logged: ' + sym.label + ' with photo' : 'Saved');
+        }).catch(function (err) {
+          done('Saved without photo');
+          alert('The entry was saved, but the photo could not be stored: ' + (err && err.message ? err.message : err));
+        });
+      } else if (photo && photo.remove && e.photoId) {
+        var old = e.photoId;
+        delete e.photoId;
+        deletePhoto(old).catch(function () {});
+        done('Saved');
+      } else {
+        done(isNew ? 'Logged: ' + sym.label : 'Saved');
+      }
+    }, isNew ? 'Log it' : 'Save');
+    hydratePhotos($('#dialog-body'));
+  }
+
+  // Photo picking inside the dialog
+  $('#dialog-body').addEventListener('change', function (ev) {
+    var input = ev.target;
+    if (input.name !== 'photo' || !input.files || !input.files[0]) return;
+    var status = $('#photo-status');
+    status.textContent = 'Processing photo…';
+    compressImage(input.files[0]).then(function (blob) {
+      pendingPhoto = { blob: blob };
+      var prev = $('#photo-preview');
+      prev.innerHTML = '<img alt="New photo">';
+      prev.querySelector('img').src = URL.createObjectURL(blob);
+      $('#photo-remove').classList.remove('hidden');
+      status.textContent = 'Photo ready (' + Math.round(blob.size / 1024) + ' KB). It is saved when you tap the button below.';
+    }).catch(function (err) {
+      status.textContent = err.message || 'Could not use that photo.';
+    });
+    input.value = '';
+  });
+  $('#dialog-body').addEventListener('click', function (ev) {
+    if (!ev.target.closest('#photo-remove')) return;
+    pendingPhoto = { remove: true };
+    $('#photo-preview').innerHTML = '';
+    $('#photo-remove').classList.add('hidden');
+    $('#photo-status').textContent = 'Photo will be removed when you save.';
+  });
+
   function logSymptom(type) {
+    if (type === 'wee_normal') { symptomDialog(type, null); return; }
     var s = { id: uid(), type: type, time: new Date().toISOString(), note: '' };
     state.symptoms.push(s);
     save();
     renderAll();
     var sym = SYMPTOM_BY_ID[type];
-    toast('Logged: ' + sym.label, 'Add note / time', function () { editEntry('symptom', s.id); });
+    toast('Logged: ' + sym.label, 'Add note / photo', function () { editEntry('symptom', s.id); });
   }
 
   function symptomButtonsHtml() {
@@ -370,6 +606,9 @@
     var urgent = symptomsSince(['blood_wee', 'wee_nothing'], now - DAY);
     urgent.forEach(function (s) {
       flags.push(SYMPTOM_BY_ID[s.type].label + ' logged ' + fmtDayTime(new Date(s.time)) + ' — call the vet.');
+    });
+    symptomsSince(['wee_normal'], now - DAY).forEach(function (s) {
+      if (s.blood) flags.push('Wee with blood logged ' + fmtDayTime(new Date(s.time)) + ' — call the vet.');
     });
     var first = firstDoseTime();
     var lastPoo = lastSymptom(['poo_normal', 'diarrhoea']);
@@ -552,15 +791,17 @@
         var med = medById(it.e.medId);
         title = '💊 ' + esc(med ? med.name : it.e.medId) + (it.e.dose ? ' — ' + esc(it.e.dose) : '');
       } else {
-        var sym = SYMPTOM_BY_ID[it.e.type] || { emoji: '•', label: it.e.type };
-        title = sym.emoji + ' ' + esc(sym.label);
+        title = symptomTitle(it.e);
       }
       html += '<div class="log-item"><div class="log-time">' + esc(fmtTime(d)) + '</div>' +
         '<div class="log-main"><div class="log-title">' + title + '</div>' +
-        (it.e.note ? '<div class="log-note">' + esc(it.e.note) + '</div>' : '') + '</div>' +
+        (it.e.note ? '<div class="log-note">' + esc(it.e.note) + '</div>' : '') +
+        (it.e.photoId ? '<button class="thumb" data-view-photo="' + esc(it.e.photoId) + '" aria-label="View photo"><img data-photo-id="' + esc(it.e.photoId) + '" alt="Photo"></button>' : '') +
+        '</div>' +
         '<button class="btn btn-secondary btn-small" data-action="edit-entry" data-kind="' + it.kind + '" data-id="' + esc(it.e.id) + '">Edit</button></div>';
     });
     $('#log-list').innerHTML = html;
+    hydratePhotos($('#log-list'));
   }
 
   /* ---------- rendering: Symptoms ---------- */
@@ -693,6 +934,21 @@
     var data = JSON.parse(JSON.stringify(state));
     data.exportedAt = new Date().toISOString();
     data.app = 'portia-meds';
+    var ids = state.symptoms.filter(function (s) { return s.photoId; }).map(function (s) { return s.photoId; });
+    if (!ids.length) { finishExport(data); return; }
+    toast('Preparing export with photos…');
+    photoEntries().then(function (all) {
+      var photos = {};
+      return Promise.all(ids.map(function (id) {
+        if (!all[id]) return null;
+        return blobToDataURL(all[id]).then(function (u) { photos[id] = u; });
+      })).then(function () { data.photos = photos; finishExport(data); });
+    }).catch(function () {
+      alert('Photos could not be read, so the export will contain the log only.');
+      finishExport(data);
+    });
+  }
+  function finishExport(data) {
     var json = JSON.stringify(data, null, 2);
     var name = 'portia-meds-' + toDateInput(new Date()) + '-' + pad(new Date().getHours()) + pad(new Date().getMinutes()) + '.json';
     var blob = new Blob([json], { type: 'application/json' });
@@ -741,10 +997,22 @@
       try { data = JSON.parse(reader.result); } catch (e) { alert('That file is not valid JSON.'); return; }
       if (!data || !Array.isArray(data.doses) || !Array.isArray(data.meds)) { alert('That does not look like a Portia Meds export.'); return; }
       var incoming = normalise(data);
+      var photos = (data.photos && typeof data.photos === 'object') ? data.photos : {};
+      var storePhotos = function () {
+        Object.keys(photos).forEach(function (id) {
+          var blob = dataURLToBlob(photos[id]);
+          if (!blob) return;
+          getPhoto(id).then(function (existing) {
+            if (!existing || mode === 'replace') return putPhoto(id, blob).then(function () { renderLog(); });
+          }).catch(function () {});
+        });
+      };
       if (mode === 'replace') {
         if (!confirm('Replace ALL data on this device with the file? This cannot be undone.')) return;
         state = incoming;
+        clearPhotos().catch(function () {}).then(storePhotos);
       } else {
+        storePhotos();
         var before = state.doses.length + state.symptoms.length;
         mergeById(state.doses, incoming.doses, true);
         mergeById(state.symptoms, incoming.symptoms, true);
@@ -770,6 +1038,7 @@
     if (!confirm('Delete ALL Portia Meds data on this device? Export a backup first if you might need it.')) return;
     if (!confirm('Really delete everything?')) return;
     state = freshState();
+    clearPhotos().catch(function () {});
     save(); renderAll(); renderSettings();
     toast('All data deleted');
   });
@@ -778,6 +1047,8 @@
   document.addEventListener('click', function (e) {
     var sym = e.target.closest('[data-symptom]');
     if (sym) { logSymptom(sym.getAttribute('data-symptom')); return; }
+    var ph = e.target.closest('[data-view-photo]');
+    if (ph) { viewPhoto(ph.getAttribute('data-view-photo')); return; }
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     var id = btn.getAttribute('data-id');
@@ -861,6 +1132,8 @@
   });
 
   /* ---------- init ---------- */
+  // Ask the browser not to evict our data (log + photos) when space is low.
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
   $('#symptom-buttons').innerHTML = symptomButtonsHtml();
   $('#symptom-buttons-today').innerHTML = symptomButtonsHtml();
   save();
