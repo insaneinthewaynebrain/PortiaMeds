@@ -1,4 +1,5 @@
-/* Portia Meds — plain JS, all data in localStorage. */
+/* Poorly Pet — plain JS, all data in localStorage.
+   NOTE: storage names below still say 'portiaMeds' on purpose — changing them would hide existing data. */
 (function () {
   'use strict';
 
@@ -12,13 +13,14 @@
   // 'legacyLabel' is shown for entries logged before the detail fields existed.
   // 'hidden' types no longer have a button but still display (and count) in the log.
   var SYMPTOMS = [
-    { id: 'poo_normal', label: 'Pooed', legacyLabel: 'Pooed', emoji: '💩', tone: 'good' },
-    { id: 'wee_normal', label: 'Weed', legacyLabel: 'Weed normally', emoji: '🚽', tone: 'good' },
-    { id: 'vomited', label: 'Vomited', emoji: '🤮', tone: 'bad' },
+    { id: 'poo_normal', label: 'Pooed', legacyLabel: 'Pooed', emoji: '💩', tone: 'good', photo: true },
+    { id: 'wee_normal', label: 'Weed', legacyLabel: 'Weed normally', emoji: '🚽', tone: 'good', photo: true },
+    { id: 'vomited', label: 'Vomited', emoji: '🤮', tone: 'bad', photo: true },
     { id: 'ate_well', label: 'Ate food', legacyLabel: 'Ate well', emoji: '🍽️', tone: 'good' },
+    { id: 'drank', label: 'Drank water', emoji: '💧', tone: 'good' },
     { id: 'strained', label: 'Strained', emoji: '😣', tone: 'bad', hidden: true },
     { id: 'blood_wee', label: 'Blood in wee', emoji: '🩸', tone: 'bad', hidden: true },
-    { id: 'diarrhoea', label: 'Diarrhoea', emoji: '💧', tone: 'bad', hidden: true },
+    { id: 'diarrhoea', label: 'Diarrhoea', emoji: '🟤', tone: 'bad', hidden: true },
     { id: 'wee_nothing', label: 'Strained to wee, nothing came', emoji: '🚫', tone: 'bad', hidden: true }
   ];
 
@@ -29,6 +31,12 @@
   var BLOOD_FIELD = { name: 'blood', label: 'Blood', bool: true, def: 'no', options: [
     { value: 'no', label: 'No blood', text: 'no blood' },
     { value: 'yes', label: 'With blood 🩸', text: 'WITH BLOOD', bad: true }] };
+  function amountField() {
+    return { name: 'amount', label: 'Amount', options: [
+      { value: 'Small', label: 'Small', text: 'small amount' },
+      { value: 'Medium', label: 'Medium', text: 'medium amount' },
+      { value: 'Large', label: 'Large', text: 'large amount' }] };
+  }
   var ENTRY_FIELDS = {
     poo_normal: [
       { name: 'consistency', label: 'Type', def: 'Solid', options: [
@@ -46,7 +54,8 @@
         { value: 'Wet', label: 'Wet food', text: 'wet food' },
         { value: 'Dry', label: 'Dry food', text: 'dry food' },
         { value: 'Both', label: 'Both', text: 'wet and dry food' }] },
-      HELP_FIELD]
+      HELP_FIELD],
+    drank: [amountField(), HELP_FIELD]
   };
   var SYMPTOM_BY_ID = {};
   SYMPTOMS.forEach(function (s) { SYMPTOM_BY_ID[s.id] = s; });
@@ -98,6 +107,10 @@
     ];
   }
 
+  function defaultProfile() {
+    return { petName: 'Portia', vetName: 'Avondale, Warwick', vetPhone: '01926 400 255' };
+  }
+
   function freshState() {
     return {
       version: 1,
@@ -106,7 +119,8 @@
       symptoms: [],   // {id, type, time, note}
       followups: defaultFollowups(),
       reviewDone: false,
-      notified: {}    // key -> true, to avoid repeat notifications
+      notified: {},   // key -> true, to avoid repeat notifications
+      profile: defaultProfile()
     };
   }
 
@@ -134,7 +148,8 @@
       symptoms: Array.isArray(s.symptoms) ? s.symptoms : [],
       followups: Array.isArray(s.followups) ? s.followups : base.followups,
       reviewDone: !!s.reviewDone,
-      notified: (s.notified && typeof s.notified === 'object') ? s.notified : {}
+      notified: (s.notified && typeof s.notified === 'object') ? s.notified : {},
+      profile: (s.profile && typeof s.profile === 'object') ? s.profile : defaultProfile()
     };
   }
 
@@ -546,7 +561,7 @@
       body += '<div class="field"><span>' + esc(f.label) + '</span>' + segHtml(f.name, f.options, current) + '</div>';
     });
     var hasPhoto = !!(entry && entry.photoId);
-    body += '<div class="field"><span>Photo (optional)</span>' +
+    if (sym.photo || hasPhoto) body += '<div class="field"><span>Photo (optional)</span>' +
       '<div class="photo-preview" id="photo-preview">' + (hasPhoto ? '<img data-photo-id="' + esc(entry.photoId) + '" alt="Photo">' : '') + '</div>' +
       '<label class="btn btn-secondary file-btn" id="photo-pick">📷 ' + (hasPhoto ? 'Replace photo' : 'Take / add photo') +
       '<input type="file" accept="image/*" name="photo"></label>' +
@@ -632,7 +647,7 @@
   function symptomButtonsHtml() {
     return SYMPTOMS.filter(function (s) { return !s.hidden; }).map(function (s) {
       return '<button class="symptom-btn ' + s.tone + '" data-symptom="' + s.id + '">' +
-        '<span class="emoji" aria-hidden="true">' + s.emoji + '</span>' + esc(s.label) + '</button>';
+        '<span class="emoji" aria-hidden="true">' + s.emoji + '</span><span class="sym-label">' + esc(s.label) + '</span></button>';
     }).join('');
   }
 
@@ -654,7 +669,7 @@
       flags.push(lastPoo ? 'No poo logged since ' + fmtDayTime(new Date(lastPoo.time)) + ' — call the vet.'
         : 'No poo logged since the first dose (' + fmtDayTime(first) + ') — call the vet.');
     }
-    $('#vet-flags').innerHTML = flags.map(function (f) { return '<div class="flag">⚠️ ' + esc(f) + '</div>'; }).join('');
+    $('#vet-flags').innerHTML = flags.map(function (f) { return '<div class="flag">' + esc(f) + '</div>'; }).join('');
   }
 
   function renderReview() {
@@ -666,13 +681,13 @@
     var msg = 'If pooing normally and no blood in wee, ask vet about stopping medication.';
     var html = '<div class="card review' + (due ? ' due' : '') + '">';
     if (state.reviewDone) {
-      html += '<strong>✅ 48-hour review done</strong><span class="muted">' + esc(msg) + '</span>' +
+      html += '<strong>48-hour review done</strong><span class="muted">' + esc(msg) + '</span>' +
         '<button class="btn btn-secondary btn-small" data-action="review-undo" style="margin-top:8px">Mark as not done</button>';
     } else if (due) {
-      html += '<strong>🔔 48-hour review is due (since ' + esc(fmtDayTime(reviewAt)) + ')</strong>' + esc(msg) +
+      html += '<strong>48-hour review is due (since ' + esc(fmtDayTime(reviewAt)) + ')</strong>' + esc(msg) +
         '<button class="btn" data-action="review-done">Done — spoken to vet</button>';
     } else {
-      html += '<strong>📅 48-hour review: ' + esc(fmtDayTime(reviewAt)) + '</strong>' +
+      html += '<strong>48-hour review: ' + esc(fmtDayTime(reviewAt)) + '</strong>' +
         '<span data-review-countdown="' + reviewAt.getTime() + '">in ' + fmtDuration(reviewAt.getTime() - Date.now()) + '</span>' +
         '<br><span class="muted">Then: ' + esc(msg) + '</span>';
     }
@@ -702,12 +717,12 @@
 
   function statusPill(st) {
     switch (st.state) {
-      case 'paused': return '<span class="pill paused">⏸ PAUSED</span>';
+      case 'paused': return '<span class="pill paused">Paused</span>';
       case 'new': return '<span class="pill new">Not started</span>';
-      case 'overdue': return '<span class="pill overdue">⚠️ OVERDUE</span>';
+      case 'overdue': return '<span class="pill overdue">Overdue</span>';
       case 'optional': return '<span class="pill soon">Optional dose</span>';
       case 'soon': return '<span class="pill soon">Due soon</span>';
-      default: return '<span class="pill ok">✓ On track</span>';
+      default: return '<span class="pill ok">On track</span>';
     }
   }
 
@@ -721,12 +736,12 @@
       h += '<div class="muted">' + esc(med.schedule) + '</div>';
 
       if (med.paused) {
-        h += '<p class="paused-note">⏸ ' + esc(med.pausedNote || 'Paused') + '</p>';
+        h += '<p class="paused-note">' + esc(med.pausedNote || 'Paused') + '</p>';
         h += '<p class="note">To restart, untick “Paused” in Settings (only after checking with the vet).</p>';
         return h + '</div>';
       }
 
-      if (med.notes) h += '<p class="med-note">ℹ️ ' + esc(med.notes) + '</p>';
+      if (med.notes) h += '<p class="med-note">' + esc(med.notes) + '</p>';
       medWarnings(med, st).forEach(function (w) {
         h += '<div class="med-warn' + (w.bad ? ' bad' : '') + '">' + esc(w.text) + '</div>';
       });
@@ -743,10 +758,10 @@
       }
       h += '</dl>';
 
-      h += '<button class="btn btn-big" data-action="given" data-id="' + esc(med.id) + '">✅ Given now</button>';
+      h += '<button class="btn btn-big" data-action="given" data-id="' + esc(med.id) + '">Given now</button>';
       h += '<div class="btn-row">';
-      h += '<button class="btn btn-secondary btn-small" data-action="earlier" data-id="' + esc(med.id) + '">🕑 Given at another time</button>';
-      if (st.last) h += '<button class="btn btn-secondary btn-small" data-action="edit-last" data-id="' + esc(st.last.id) + '">✏️ Edit last dose</button>';
+      h += '<button class="btn btn-secondary btn-small" data-action="earlier" data-id="' + esc(med.id) + '">Given at another time</button>';
+      if (st.last) h += '<button class="btn btn-secondary btn-small" data-action="edit-last" data-id="' + esc(st.last.id) + '">Edit last dose</button>';
       h += '</div>';
       return h + '</div>';
     }).join('');
@@ -755,13 +770,13 @@
     var overdue = state.meds.filter(function (m) { return medStatus(m, now).state === 'overdue'; });
     var banner = $('#overdue-banner');
     if (overdue.length) {
-      banner.textContent = '⚠️ Overdue: ' + overdue.map(function (m) { return m.name; }).join(', ');
+      banner.textContent = 'Overdue: ' + overdue.map(function (m) { return m.name; }).join(', ');
       banner.classList.remove('hidden');
     } else {
       banner.classList.add('hidden');
     }
     document.querySelector('.tab[data-view=today]').classList.toggle('has-alert', overdue.length > 0);
-    document.title = overdue.length ? '⚠️ Dose overdue — Portia Meds' : 'Portia Meds';
+    document.title = overdue.length ? 'Dose overdue — Poorly Pet' : 'Poorly Pet';
   }
 
   function renderLastPoo() {
@@ -800,7 +815,7 @@
       return;
     }
     if (Notification.permission === 'granted') {
-      el.textContent = '✅ Notifications are on. You will be alerted when a dose becomes due (while the app is open).';
+      el.textContent = 'Notifications are on. You will be alerted when a dose becomes due (while the app is open).';
       btn.classList.add('hidden');
     } else if (Notification.permission === 'denied') {
       el.textContent = 'Notifications are blocked. Re-enable them in your browser / iPhone Settings → Notifications.';
@@ -890,7 +905,24 @@
     renderNotifyStatus();
   }
 
+  /* ---------- pet & vet details ---------- */
+  function telHref(phone) { return 'tel:' + String(phone || '').replace(/[^\d+]/g, ''); }
+  function renderProfile() {
+    var P = state.profile || defaultProfile();
+    document.querySelectorAll('[data-pet-name]').forEach(function (el) { el.textContent = P.petName || ''; });
+    document.querySelectorAll('[data-vet-call]').forEach(function (a) {
+      a.href = telHref(P.vetPhone);
+      a.classList.toggle('hidden', !P.vetPhone);
+    });
+    document.querySelectorAll('[data-vet-name]').forEach(function (el) { el.textContent = P.vetName || 'the vet'; });
+    document.querySelectorAll('[data-vet-phone]').forEach(function (el) { el.textContent = P.vetPhone || ''; });
+    document.querySelectorAll('[data-profile-field]').forEach(function (inp) {
+      if (document.activeElement !== inp) inp.value = P[inp.getAttribute('data-profile-field')] || '';
+    });
+  }
+
   function renderAll() {
+    renderProfile();
     renderToday();
     renderLog();
     renderSymptomSummary();
@@ -941,7 +973,7 @@
       // Don't fire for doses that were due a long time ago (e.g. reopening the app days later) more than once.
       state.notified[key] = true;
       changed = true;
-      notify('💊 ' + med.name + (st.state === 'optional' ? ' — optional dose' : ' is due'),
+      notify(med.name + (st.state === 'optional' ? ' — optional dose' : ' is due'),
         med.dose + '. Due ' + fmtDayTime(new Date(st.next)) + '. Tap “Given now” once given.', 'dose-' + med.id);
     });
     if (changed) {
@@ -957,7 +989,7 @@
     var p = Notification.requestPermission(function () { renderNotifyStatus(); });
     if (p && p.then) p.then(function (res) {
       renderNotifyStatus();
-      if (res === 'granted') notify('Portia Meds', 'Notifications are on. Keep the app open so reminders can fire.', 'test');
+      if (res === 'granted') notify('Poorly Pet', 'Notifications are on. Keep the app open so reminders can fire.', 'test');
     });
   });
 
@@ -1054,7 +1086,10 @@
     function lh(size) { return size * 0.43; }
 
     // Title
-    setFont('bold', 18); doc.text('Portia - medication & symptom log', M, y + 5); y += 11;
+    var P = state.profile || defaultProfile();
+    setFont('bold', 18); doc.text(pt((P.petName || 'Pet') + ' - medication & activity log'), M, y + 5); y += 7;
+    setFont('normal', 10, GREY);
+    if (P.vetName || P.vetPhone) { doc.text(pt('Vet: ' + [P.vetName, P.vetPhone].filter(Boolean).join(' - ')), M, y + 3); y += 6; } else { y += 2; }
     var tz = '';
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* ignore */ }
     setFont('normal', 9, GREY);
@@ -1149,10 +1184,10 @@
     for (var i = 1; i <= pages; i++) {
       doc.setPage(i);
       setFont('normal', 8, GREY);
-      doc.text('Portia - medication & symptom log', M, PAGE_H - 8);
+      doc.text(pt('Poorly Pet - ' + ((state.profile && state.profile.petName) || 'Pet') + ' medication & activity log'), M, PAGE_H - 8);
       doc.text('Page ' + i + ' of ' + pages, M + W, PAGE_H - 8, { align: 'right' });
     }
-    var name = 'Portia-vet-log-' + toDateInput(new Date()) + '.pdf';
+    var name = ((state.profile && state.profile.petName) || 'Pet').replace(/[^A-Za-z0-9]+/g, '-') + '-vet-log-' + toDateInput(new Date()) + '.pdf';
     return { blob: doc.output('blob'), name: name, pages: pages };
   }
 
@@ -1174,7 +1209,7 @@
     if (!lastPdf) return;
     if (ev.target.closest('#pdf-share')) {
       var file = new File([lastPdf.blob], lastPdf.name, { type: 'application/pdf' });
-      navigator.share({ files: [file], title: 'Portia - medication & symptom log' }).catch(function (e) {
+      navigator.share({ files: [file], title: 'Poorly Pet - vet log' }).catch(function (e) {
         if (e && e.name !== 'AbortError') openPdf();
       });
     } else if (ev.target.closest('#pdf-open')) {
@@ -1210,12 +1245,12 @@
   }
   function finishExport(data) {
     var json = JSON.stringify(data, null, 2);
-    var name = 'portia-meds-' + toDateInput(new Date()) + '-' + pad(new Date().getHours()) + pad(new Date().getMinutes()) + '.json';
+    var name = 'poorly-pet-' + toDateInput(new Date()) + '-' + pad(new Date().getHours()) + pad(new Date().getMinutes()) + '.json';
     var blob = new Blob([json], { type: 'application/json' });
     try {
       var file = new File([blob], name, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'Portia Meds log' }).catch(function (e) {
+        navigator.share({ files: [file], title: 'Poorly Pet log' }).catch(function (e) {
           if (e && e.name !== 'AbortError') download(blob, name);
         });
         return;
@@ -1255,7 +1290,7 @@
     reader.onload = function () {
       var data;
       try { data = JSON.parse(reader.result); } catch (e) { alert('That file is not valid JSON.'); return; }
-      if (!data || !Array.isArray(data.doses) || !Array.isArray(data.meds)) { alert('That does not look like a Portia Meds export.'); return; }
+      if (!data || !Array.isArray(data.doses) || !Array.isArray(data.meds)) { alert('That does not look like a Poorly Pet export.'); return; }
       var incoming = normalise(data);
       var photos = (data.photos && typeof data.photos === 'object') ? data.photos : {};
       var storePhotos = function () {
@@ -1297,7 +1332,7 @@
   $('#import-replace').addEventListener('change', function (e) { importFile(e.target, 'replace'); });
 
   $('#btn-reset').addEventListener('click', function () {
-    if (!confirm('Delete ALL Portia Meds data on this device? Export a backup first if you might need it.')) return;
+    if (!confirm('Delete ALL Poorly Pet data on this device? Export a backup first if you might need it.')) return;
     if (!confirm('Really delete everything?')) return;
     state = freshState();
     clearPhotos().catch(function () {});
@@ -1334,6 +1369,13 @@
   // Follow-up edits
   document.addEventListener('change', function (e) {
     var t = e.target;
+    var pf = t.getAttribute('data-profile-field');
+    if (pf) {
+      if (!state.profile) state.profile = defaultProfile();
+      state.profile[pf] = t.value.trim();
+      save(); renderProfile(); toast('Saved');
+      return;
+    }
     var fid = t.getAttribute('data-fu-done') || t.getAttribute('data-fu-date');
     if (fid) {
       var fu = state.followups.filter(function (f) { return f.id === fid; })[0];
@@ -1394,6 +1436,10 @@
   });
 
   /* ---------- init ---------- */
+  // No pinch / double-tap zoom (iOS Safari ignores user-scalable=no, so block its gesture events too).
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+  });
   // Ask the browser not to evict our data (log + photos) when space is low.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
   $('#symptom-buttons').innerHTML = symptomButtonsHtml();

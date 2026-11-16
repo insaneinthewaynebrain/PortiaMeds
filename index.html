@@ -2,35 +2,62 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#5b4bdb">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#162127" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Portia Meds">
+  <meta name="apple-mobile-web-app-title" content="Poorly Pet">
+  <meta name="format-detection" content="telephone=no">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐈</text></svg>">
-  <title>Portia Meds</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <title>Poorly Pet</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+      <symbol id="i-today" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-log" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
+    </defs>
+  </svg>
+
   <header class="app-header">
-    <h1>🐈 Portia Meds</h1>
-    <div id="clock" class="clock"></div>
+    <div class="header-inner">
+      <div class="brand">
+        <img src="icon.svg" alt="" class="brand-logo" width="36" height="36">
+        <div>
+          <div class="brand-name">Poorly Pet</div>
+          <div class="brand-sub"><span data-pet-name>Portia</span> · <span id="clock" class="clock"></span></div>
+        </div>
+      </div>
+      <a class="call-pill" data-vet-call href="tel:01926400255" aria-label="Call the vet">
+        <svg class="ico"><use href="#i-phone"/></svg><span>Call vet</span>
+      </a>
+    </div>
   </header>
 
   <main>
     <!-- TODAY -->
-    <section id="view-today" class="view active" aria-label="Today">
+    <section id="view-today" class="view view-cols active" aria-label="Today">
       <div class="card vet-alert">
-        <h2>📞 Call the vet if…</h2>
+        <h2>Call the vet if…</h2>
         <ul class="checklist">
           <li>She is <strong>not pooing</strong></li>
           <li>There is <strong>blood in her wee</strong></li>
           <li>She is <strong>straining to wee with nothing passing</strong></li>
         </ul>
         <div id="vet-flags"></div>
+        <a class="btn btn-call" data-vet-call href="tel:01926400255">
+          <svg class="ico"><use href="#i-phone"/></svg>
+          <span>Call <span data-vet-name>Avondale, Warwick</span><span class="call-number" data-vet-phone>01926 400 255</span></span>
+        </a>
       </div>
 
       <div id="overdue-banner" class="banner overdue hidden"></div>
@@ -39,9 +66,9 @@
       <div id="med-list"></div>
 
       <div class="card">
-        <h2>Quick symptom log</h2>
+        <h2>Log an activity</h2>
         <div id="symptom-buttons-today" class="symptom-grid"></div>
-        <p id="last-poo" class="muted"></p>
+        <p id="last-poo" class="muted small"></p>
       </div>
 
       <div class="card">
@@ -54,7 +81,7 @@
         <p id="notify-status" class="muted"></p>
         <button id="btn-notify" class="btn btn-secondary">Turn on dose notifications</button>
         <p class="note">
-          <strong>iPhone note:</strong> iPhones only show these alerts while Portia Meds is
+          <strong>iPhone note:</strong> iPhones only show these alerts while Poorly Pet is
           <strong>open</strong>, and only if it has been <strong>added to the Home Screen</strong>
           (Safari → Share → “Add to Home Screen”, iOS 16.4 or later) and opened from there.
           Don’t rely on notifications alone — set a phone alarm as a backup.
@@ -63,27 +90,29 @@
     </section>
 
     <!-- LOG -->
-    <section id="view-log" class="view" aria-label="Log">
+    <section id="view-log" class="view view-narrow" aria-label="Log">
       <div class="card">
-        <h2>Dose &amp; symptom history</h2>
-        <button id="btn-pdf" class="btn">📄 Create PDF for the vet</button>
+        <div class="card-head">
+          <h2>History</h2>
+        </div>
+        <button id="btn-pdf" class="btn"><svg class="ico"><use href="#i-file"/></svg> Create PDF for the vet</button>
         <div class="filter-row">
           <label for="log-filter">Show</label>
           <select id="log-filter">
             <option value="all">Everything</option>
-            <option value="doses">Doses only</option>
-            <option value="symptoms">Symptoms only</option>
+            <option value="doses">Medication doses only</option>
+            <option value="symptoms">Activities only</option>
           </select>
         </div>
         <div id="log-list"></div>
       </div>
     </section>
 
-    <!-- SYMPTOMS -->
-    <section id="view-symptoms" class="view" aria-label="Symptoms">
+    <!-- ACTIVITIES -->
+    <section id="view-symptoms" class="view view-cols" aria-label="Activities">
       <div class="card">
-        <h2>Symptom tracker</h2>
-        <p class="muted">Tap a button to log it. Each one asks for a few quick details and an optional photo. You can change anything later from the Log.</p>
+        <h2>Log an activity</h2>
+        <p class="muted small">Tap to log. Each one asks for a few quick details. Poo, wee and vomit can include a photo. You can change anything later from the Log.</p>
         <div id="symptom-buttons" class="symptom-grid"></div>
       </div>
       <div class="card">
@@ -93,7 +122,15 @@
     </section>
 
     <!-- SETTINGS -->
-    <section id="view-settings" class="view" aria-label="Settings">
+    <section id="view-settings" class="view view-cols" aria-label="Settings">
+      <div class="card">
+        <h2>Pet &amp; vet</h2>
+        <label class="field"><span>Pet’s name</span><input type="text" data-profile-field="petName" autocomplete="off"></label>
+        <label class="field"><span>Vet practice</span><input type="text" data-profile-field="vetName" autocomplete="off"></label>
+        <label class="field"><span>Vet phone number</span><input type="tel" data-profile-field="vetPhone" autocomplete="off"></label>
+        <p class="note">Used for the “Call vet” buttons and printed on the PDF.</p>
+      </div>
+
       <div class="card">
         <h2>Medications</h2>
         <div id="med-settings"></div>
@@ -102,8 +139,8 @@
 
       <div class="card">
         <h2>Share / back up</h2>
-        <p class="muted">Export the whole log as a JSON file to send to someone else. They can import it on their phone.</p>
-        <button id="btn-pdf-settings" class="btn">📄 Create PDF for the vet</button>
+        <p class="muted small">Export the whole log as a file to send to someone else. They can import it on their phone.</p>
+        <button id="btn-pdf-settings" class="btn"><svg class="ico"><use href="#i-file"/></svg> Create PDF for the vet</button>
         <button id="btn-export" class="btn btn-secondary">Export / share log (JSON)</button>
         <label class="btn btn-secondary file-btn">
           Import &amp; merge
@@ -121,15 +158,17 @@
         <button id="btn-reset" class="btn btn-danger">Delete all data on this device</button>
       </div>
 
-      <p class="disclaimer">This app is a reminder aid only. Always follow your vet’s instructions.</p>
+      <p class="disclaimer">Poorly Pet is a reminder aid only. Always follow your vet’s instructions.</p>
     </section>
   </main>
 
   <nav class="tabbar" aria-label="Sections">
-    <button data-view="today" class="tab active">💊<span>Today</span></button>
-    <button data-view="log" class="tab">📋<span>Log</span></button>
-    <button data-view="symptoms" class="tab">🩺<span>Symptoms</span></button>
-    <button data-view="settings" class="tab">⚙️<span>Settings</span></button>
+    <div class="tabbar-inner">
+      <button data-view="today" class="tab active"><svg class="ico"><use href="#i-today"/></svg><span>Today</span></button>
+      <button data-view="log" class="tab"><svg class="ico"><use href="#i-log"/></svg><span>Log</span></button>
+      <button data-view="symptoms" class="tab"><svg class="ico"><use href="#i-activity"/></svg><span>Activities</span></button>
+      <button data-view="settings" class="tab"><svg class="ico"><use href="#i-settings"/></svg><span>Settings</span></button>
+    </div>
   </nav>
 
   <!-- Edit dialog (reused) -->

@@ -1,13 +1,18 @@
-# 🐈 Portia Meds
+# Poorly Pet
 
-A small, private medication tracker for Portia the cat after her vet visit, so every dose is given on time and nothing gets missed.
+A small, private medication and activity tracker for a poorly pet (originally built for Portia the cat after her vet visit), so every dose is given on time and nothing gets missed.
+
+> The repository is still called `PortiaMeds`, and the app keeps its storage under the old internal names. That's deliberate: changing the web address or storage names would make existing logs disappear from the phone.
 
 It's a static site: plain HTML, CSS and vanilla JavaScript. There's no build step and no frameworks. It runs on GitHub Pages and is designed for iPhone.
 
 **Live app:** https://insaneinthewaynebrain.github.io/PortiaMeds/
 
+Designed for iPhone, and also lays out in columns on wider screens such as an unfolded foldable, a tablet or landscape. Pinch and double-tap zoom are turned off so taps don't zoom the page.
+
 ## Features
 
+- **Call vet** button in the header and a large **Call** button on the Today screen. The vet's name and number are editable in Settings (default: Avondale, Warwick, 01926 400 255).
 - **Call the vet if…** checklist at the top: not pooing, blood in wee, straining to wee with nothing passing. The app also flags these automatically when the matching symptoms are logged, or when no poo has been logged for 48 hours.
 - **Medication cards** show the dose, last dose, next dose due and a live countdown.
   - **✅ Given now** logs the current time. The next dose is due 8 hours later (configurable).
@@ -17,11 +22,12 @@ It's a static site: plain HTML, CSS and vanilla JavaScript. There's no build ste
   - Lactulose warnings: "STOP if diarrhoea" and "can increase to 1 ml if no poo by day 2".
   - Gabapentin: once 2 doses have been given in 24 hours, the third shows as *optional* (only if she's still straining).
   - Metacam is shown as **PAUSED**: "Stopped by vet for 24–48 hours, ask before restarting".
-- **Symptom tracker** with four buttons, each opening a quick form with an optional **photo** and a note:
+- **Activities** with five buttons, each opening a quick form with a note (poo, wee and vomit can also have a **photo**):
   - **Pooed**: solid or diarrhoea (default solid), blood or not (default no blood), on her own or needed help.
   - **Weed**: small, medium or large, blood or not (default no blood), on her own or needed help.
   - **Vomited**: photo and note.
   - **Ate food**: wet, dry or both, on her own or needed help.
+  - **Drank water**: small, medium or large, on her own or needed help.
   - Blood in poo or wee raises the "call the vet" alert. Diarrhoea triggers the "stop lactulose" warning.
   - Entries logged with older versions of the app (e.g. "Strained", "Ate well") still show in the log as they were.
   - Add or replace a photo on any entry from the Log (tap **Edit**). Tap a thumbnail to see it full size.

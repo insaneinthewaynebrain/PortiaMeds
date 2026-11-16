@@ -1,11 +1,11 @@
 {
-  "name": "Portia Meds",
-  "short_name": "Portia Meds",
+  "name": "Poorly Pet",
+  "short_name": "Poorly Pet",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f2fb",
-  "theme_color": "#5b4bdb",
+  "background_color": "#f2f5f7",
+  "theme_color": "#0b6e8a",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
