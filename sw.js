@@ -1,5 +1,5 @@
 /* Portia Meds service worker: network-first with offline fallback, and notification clicks. */
-var CACHE = 'portia-meds-v2';
+var CACHE = 'portia-meds-v3';
 var FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png'];
 
 self.addEventListener('install', function (e) {
@@ -16,7 +16,8 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then(function (res) {
+    // 'no-cache' makes the browser check GitHub for a newer file every time (falls back to the cache offline).
+    fetch(e.request, { cache: 'no-cache' }).then(function (res) {
       var copy = res.clone();
       caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
       return res;
