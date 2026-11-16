@@ -66,6 +66,7 @@
     <section id="view-log" class="view" aria-label="Log">
       <div class="card">
         <h2>Dose &amp; symptom history</h2>
+        <button id="btn-pdf" class="btn">📄 Create PDF for the vet</button>
         <div class="filter-row">
           <label for="log-filter">Show</label>
           <select id="log-filter">
@@ -102,7 +103,8 @@
       <div class="card">
         <h2>Share / back up</h2>
         <p class="muted">Export the whole log as a JSON file to send to someone else. They can import it on their phone.</p>
-        <button id="btn-export" class="btn">Export / share log (JSON)</button>
+        <button id="btn-pdf-settings" class="btn">📄 Create PDF for the vet</button>
+        <button id="btn-export" class="btn btn-secondary">Export / share log (JSON)</button>
         <label class="btn btn-secondary file-btn">
           Import &amp; merge
           <input type="file" id="import-merge" accept="application/json,.json">

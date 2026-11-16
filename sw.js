@@ -1,6 +1,6 @@
 /* Portia Meds service worker: network-first with offline fallback, and notification clicks. */
-var CACHE = 'portia-meds-v3';
-var FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png'];
+var CACHE = 'portia-meds-v4';
+var FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png', 'vendor/jspdf.umd.min.js'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).catch(function () {}));

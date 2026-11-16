@@ -9,7 +9,7 @@
   var REVIEW_HOURS = 48;
 
   var SYMPTOMS = [
-    { id: 'poo_normal', label: 'Pooed normally', emoji: '💩', tone: 'good' },
+    { id: 'poo_normal', label: 'Pooed', emoji: '💩', tone: 'good' },
     { id: 'strained', label: 'Strained', emoji: '😣', tone: 'bad' },
     { id: 'blood_wee', label: 'Blood in wee', emoji: '🩸', tone: 'bad' },
     { id: 'diarrhoea', label: 'Diarrhoea', emoji: '💧', tone: 'bad' },
@@ -728,8 +728,8 @@
 
   function renderLastPoo() {
     var poo = lastSymptom(['poo_normal']);
-    $('#last-poo').textContent = poo ? 'Last normal poo: ' + fmtDayTime(new Date(poo.time)) + ' (' + fmtAgo(Date.now() - new Date(poo.time)) + ')'
-      : 'No normal poo logged yet.';
+    $('#last-poo').textContent = poo ? 'Last poo: ' + fmtDayTime(new Date(poo.time)) + ' (' + fmtAgo(Date.now() - new Date(poo.time)) + ')'
+      : 'No poo logged yet.';
   }
 
   function renderFollowups() {
@@ -929,6 +929,326 @@
     });
   }
 
+  /* ---------- PDF report for the vet ---------- */
+  function loadJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'vendor/jspdf.umd.min.js';
+      s.onload = function () { window.jspdf ? resolve(window.jspdf.jsPDF) : reject(new Error('PDF library did not load.')); };
+      s.onerror = function () { reject(new Error('Could not load the PDF library. Check your internet connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  // The built-in PDF fonts only cover Latin-1, so swap typographic characters and drop emoji.
+  function pt(s) {
+    return String(s == null ? '' : s)
+      .replace(/[   ]/g, ' ')
+      .replace(/[–—]/g, '-')
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/…/g, '...')
+      .replace(/[^\x09\x0A\x0D\x20-\x7E¡-ÿ]/g, '')
+      .replace(/ {2,}/g, ' ')
+      .trim();
+  }
+  function pdfDate(d) {
+    return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function pdfDateTime(d) { return pdfDate(d) + ' ' + fmtTime(d); }
+  function pdfShortDateTime(d) {
+    return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' + fmtTime(d);
+  }
+
+  function symptomPlain(e) {
+    var sym = SYMPTOM_BY_ID[e.type] || { label: e.type };
+    if (e.type === 'wee_normal') {
+      if (!e.amount && e.blood == null) return sym.legacyLabel;
+      return sym.label + ' - ' + (e.amount ? e.amount + ' amount, ' : '') + (e.blood ? 'WITH BLOOD' : 'no blood');
+    }
+    return sym.label;
+  }
+  function isConcerning(e) {
+    return ['blood_wee', 'wee_nothing', 'diarrhoea', 'vomited', 'strained'].indexOf(e.type) !== -1 ||
+      (e.type === 'wee_normal' && e.blood === true);
+  }
+
+  function pdfOptionsDialog() {
+    var hasPhotos = state.symptoms.some(function (s) { return s.photoId; });
+    var body =
+      '<p class="muted">Makes a PDF of the medication and symptom log that you can email or message to the vet.</p>' +
+      '<label class="field"><span>Period</span><select name="range">' +
+      '<option value="all">Everything logged</option><option value="2">Last 2 days</option>' +
+      '<option value="3">Last 3 days</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option></select></label>' +
+      (hasPhotos ? '<label class="check-field"><input type="checkbox" name="photos" checked> Include photos</label>' : '') +
+      '<label class="field"><span>Note for the vet (optional)</span><textarea name="vetnote" placeholder="e.g. Still straining today, has only had a small wee since this morning"></textarea></label>';
+    openDialog('PDF for the vet', body, function (rv, dlg) {
+      if (rv !== 'ok') return;
+      var range = dlg.querySelector('[name=range]').value;
+      var ph = dlg.querySelector('[name=photos]');
+      var opts = {
+        from: range === 'all' ? 0 : Date.now() - Number(range) * DAY,
+        rangeLabel: range === 'all' ? 'Everything logged' : 'Last ' + range + ' days',
+        photos: !!(ph && ph.checked),
+        vetNote: dlg.querySelector('[name=vetnote]').value.trim()
+      };
+      toast('Creating PDF…');
+      buildPdf(opts).then(showPdfReady).catch(function (err) {
+        console.error(err);
+        alert('Sorry, the PDF could not be created: ' + (err && err.message ? err.message : err));
+      });
+    }, 'Create PDF');
+  }
+
+  function buildPdf(opts) {
+    return loadJsPdf().then(function (JsPDF) {
+      var inRange = function (e) { return new Date(e.time).getTime() >= opts.from; };
+      var doses = state.doses.filter(inRange);
+      var symptoms = state.symptoms.filter(inRange);
+      var photoIds = opts.photos ? symptoms.filter(function (s) { return s.photoId; }).map(function (s) { return s.photoId; }) : [];
+      var photosP = photoIds.length ? photoEntries().catch(function () { return {}; }) : Promise.resolve({});
+      return photosP.then(function (blobs) {
+        var urls = {};
+        return Promise.all(photoIds.map(function (id) {
+          return blobs[id] ? blobToDataURL(blobs[id]).then(function (u) { urls[id] = u; }) : null;
+        })).then(function () { return renderPdf(JsPDF, opts, doses, symptoms, urls); });
+      });
+    });
+  }
+
+  function renderPdf(JsPDF, opts, doses, symptoms, photoUrls2) {
+    var doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    var M = 15, W = 210 - 2 * M, PAGE_H = 297, BOTTOM = PAGE_H - 18;
+    var y = M;
+    var RED = [180, 20, 30], GREY = [110, 110, 120], BLACK = [20, 20, 30];
+
+    function ensure(h) { if (y + h > BOTTOM) { doc.addPage(); y = M; return true; } return false; }
+    function heading(t) {
+      ensure(30); // keep a heading with at least a few lines of what follows
+      y += 4;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, BLACK);
+      doc.text(pt(t), M, y); y += 2;
+      doc.setDrawColor(91, 75, 219); doc.setLineWidth(0.5); doc.line(M, y, M + W, y); y += 5;
+    }
+    function para(t, o) {
+      o = o || {};
+      doc.setFont('helvetica', o.bold ? 'bold' : 'normal'); doc.setFontSize(o.size || 10);
+      doc.setTextColor.apply(doc, o.color || BLACK);
+      var lines = doc.splitTextToSize(pt(t), W - (o.indent || 0));
+      var lh = (o.size || 10) * 0.45;
+      lines.forEach(function (ln) { ensure(lh); doc.text(ln, M + (o.indent || 0), y); y += lh; });
+      y += o.after == null ? 1.5 : o.after;
+    }
+    function table(cols, rows) {
+      var fs = 9, lh = fs * 0.42, padY = 1.6;
+      function head() {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(fs); doc.setTextColor.apply(doc, BLACK);
+        doc.setFillColor(236, 233, 250); doc.rect(M, y, W, lh + 2 * padY, 'F');
+        var x = M;
+        cols.forEach(function (c) { doc.text(pt(c.title), x + 1.2, y + padY + lh - 0.6); x += c.w; });
+        y += lh + 2 * padY;
+      }
+      ensure(20); head();
+      rows.forEach(function (r) {
+        doc.setFontSize(fs);
+        var cells = r.cells.map(function (txt, i) {
+          doc.setFont('helvetica', (r.boldCol === i) ? 'bold' : 'normal');
+          return doc.splitTextToSize(pt(txt), cols[i].w - 2.4);
+        });
+        var n = Math.max.apply(null, cells.map(function (c) { return c.length || 1; }));
+        var h = n * lh + 2 * padY;
+        if (ensure(h)) head();
+        var x = M;
+        cells.forEach(function (lines, i) {
+          doc.setFont('helvetica', (r.boldCol === i) ? 'bold' : 'normal');
+          doc.setTextColor.apply(doc, r.color || BLACK);
+          lines.forEach(function (ln, j) { doc.text(ln, x + 1.2, y + padY + lh * (j + 1) - 0.6); });
+          x += cols[i].w;
+        });
+        y += h;
+        doc.setDrawColor(220, 218, 232); doc.setLineWidth(0.2); doc.line(M, y, M + W, y);
+      });
+      y += 3;
+    }
+
+    // Title
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor.apply(doc, BLACK);
+    doc.text('Portia - medication & symptom log', M, y + 4); y += 11;
+    var tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* ignore */ }
+    para('Created ' + pdfDateTime(new Date()) + '. Period: ' + opts.rangeLabel + '. Times are local' + (tz ? ' (' + tz + ')' : '') + '.', { color: GREY, size: 9 });
+    para('Doses and symptoms as recorded by the owners in the Portia Meds app.', { color: GREY, size: 9, after: 3 });
+
+    if (opts.vetNote) {
+      heading('Note from the owner');
+      para(opts.vetNote, { size: 11 });
+    }
+
+    // Alerts in range
+    var alerts = symptoms.filter(isConcerning).sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+    var lastPoo = lastSymptom(['poo_normal', 'diarrhoea']);
+    heading('At a glance');
+    para('Last poo logged: ' + (lastPoo ? pdfDateTime(new Date(lastPoo.time)) + ' (' + symptomPlain(lastPoo) + ')' : 'none logged'));
+    var lastWee = lastSymptom(['wee_normal']);
+    para('Last wee logged: ' + (lastWee ? pdfDateTime(new Date(lastWee.time)) + ' (' + symptomPlain(lastWee) + ')' : 'none logged'));
+    if (alerts.length) {
+      para('Concerning entries in this period: ' + alerts.length + ' (shown in red below):', { bold: true, color: RED });
+      alerts.forEach(function (a) { para('- ' + pdfDateTime(new Date(a.time)) + ': ' + symptomPlain(a) + (a.note ? ' - ' + a.note : ''), { color: RED, indent: 3, after: 0.5 }); });
+      y += 1;
+    } else {
+      para('No blood in wee, diarrhoea, vomiting or straining logged in this period.');
+    }
+
+    // Medications
+    heading('Medications');
+    state.meds.forEach(function (m) {
+      var md = doses.filter(function (d) { return d.medId === m.id; }).sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+      para(m.name + (m.purpose ? ' (' + m.purpose + ')' : '') + (m.paused ? ' - PAUSED' : ''), { bold: true, size: 11, after: 0.5 });
+      para((m.dose || '') + (m.schedule ? ', ' + m.schedule : ''), { indent: 3, after: 0.5 });
+      if (m.paused && m.pausedNote) para(m.pausedNote, { indent: 3, after: 0.5, color: GREY });
+      if (m.notes) para('Instructions: ' + m.notes, { indent: 3, after: 0.5, color: GREY });
+      para('Doses logged in period: ' + md.length + (md.length ? ' (first ' + pdfDateTime(new Date(md[0].time)) + ', last ' + pdfDateTime(new Date(md[md.length - 1].time)) + ')' : ''), { indent: 3, after: 2.5 });
+    });
+
+    // Key dates
+    var first = firstDoseTime();
+    heading('Key dates');
+    if (first) {
+      para('First dose logged: ' + pdfDateTime(first));
+      para('48-hour review: ' + pdfDateTime(new Date(first.getTime() + REVIEW_HOURS * HOUR)) + (state.reviewDone ? ' (done)' : ''));
+    }
+    state.followups.forEach(function (f) {
+      var d = fromDateInput(f.date);
+      para(f.label + ': ' + (d ? pdfDate(d) : 'no date') + (f.done ? ' (done)' : ''));
+    });
+
+    // Daily summary
+    var all = doses.map(function (d) { return d.time; }).concat(symptoms.map(function (s) { return s.time; }))
+      .map(function (t) { return new Date(t); }).sort(function (a, b) { return a - b; });
+    if (all.length) {
+      heading('Daily summary');
+      var medsUsed = state.meds.filter(function (m) { return doses.some(function (d) { return d.medId === m.id; }); });
+      var cols = [{ title: 'Date', w: 30 }];
+      var medW = medsUsed.length ? Math.min(24, 70 / medsUsed.length) : 0;
+      medsUsed.forEach(function (m) { cols.push({ title: m.name, w: medW }); });
+      cols.push({ title: 'Pooed', w: 14 }, { title: 'Weed', w: 13 }, { title: 'Blood', w: 13 });
+      var used = cols.reduce(function (s, c) { return s + c.w; }, 0);
+      cols.push({ title: 'Other symptoms', w: W - used });
+      var days = [];
+      var d0 = new Date(all[0].getFullYear(), all[0].getMonth(), all[0].getDate());
+      var last = all[all.length - 1];
+      for (var d = d0; d <= last; d = addDays(d, 1)) days.push(d);
+      var rows = days.map(function (day) {
+        var next = addDays(day, 1);
+        var inDay = function (e) { var t = new Date(e.time); return t >= day && t < next; };
+        var sd = symptoms.filter(inDay);
+        var count = function (fn) { return sd.filter(fn).length; };
+        var blood = count(function (s) { return s.type === 'blood_wee' || (s.type === 'wee_normal' && s.blood === true); });
+        var other = {};
+        sd.forEach(function (s) {
+          if (['poo_normal', 'wee_normal', 'blood_wee'].indexOf(s.type) !== -1) return;
+          var l = (SYMPTOM_BY_ID[s.type] || { label: s.type }).label;
+          other[l] = (other[l] || 0) + 1;
+        });
+        var cells = [pdfDate(day)];
+        medsUsed.forEach(function (m) { cells.push(String(doses.filter(function (x) { return x.medId === m.id && inDay(x); }).length)); });
+        cells.push(String(count(function (s) { return s.type === 'poo_normal'; })), String(count(function (s) { return s.type === 'wee_normal'; })), blood ? String(blood) : '0');
+        cells.push(Object.keys(other).map(function (k) { return k + (other[k] > 1 ? ' x' + other[k] : ''); }).join(', ') || '-');
+        return { cells: cells, color: (blood || sd.some(isConcerning)) ? RED : null };
+      });
+      table(cols, rows);
+    }
+
+    // Full log
+    heading('Full log (oldest first)');
+    var items = doses.map(function (d) { return { kind: 'dose', e: d }; })
+      .concat(symptoms.map(function (s) { return { kind: 'symptom', e: s }; }))
+      .sort(function (a, b) { return new Date(a.e.time) - new Date(b.e.time); });
+    var photoNums = {}, pn = 0;
+    if (!items.length) para('Nothing logged in this period.');
+    else {
+      table([{ title: 'Date & time', w: 40 }, { title: 'Entry', w: 50 }, { title: 'Details / notes', w: W - 90 }],
+        items.map(function (it) {
+          var e = it.e, details = [];
+          if (it.kind === 'dose') {
+            var med = medById(e.medId);
+            if (e.dose) details.push(e.dose);
+            if (e.note) details.push(e.note);
+            return { cells: [pdfShortDateTime(new Date(e.time)), 'Dose: ' + (med ? med.name : e.medId), details.join(' - ')], boldCol: 1 };
+          }
+          if (e.note) details.push(e.note);
+          if (e.photoId && photoUrls2[e.photoId]) { photoNums[e.photoId] = ++pn; details.push('[Photo ' + pn + ']'); }
+          return { cells: [pdfShortDateTime(new Date(e.time)), symptomPlain(e), details.join(' - ')], color: isConcerning(e) ? RED : null };
+        }));
+    }
+
+    // Photos
+    var withPhotos = symptoms.filter(function (s) { return s.photoId && photoUrls2[s.photoId]; })
+      .sort(function (a, b) { return new Date(a.time) - new Date(b.time); });
+    if (withPhotos.length) {
+      doc.addPage(); y = M;
+      heading('Photos');
+      withPhotos.forEach(function (s) {
+        var url = photoUrls2[s.photoId];
+        var props;
+        try { props = doc.getImageProperties(url); } catch (e) { return; }
+        var maxW = W, maxH = 110;
+        var scale = Math.min(maxW / props.width, maxH / props.height);
+        var w = props.width * scale, h = props.height * scale;
+        ensure(h + 14);
+        para('Photo ' + photoNums[s.photoId] + ' - ' + pdfDateTime(new Date(s.time)) + ' - ' + symptomPlain(s) + (s.note ? ' - ' + s.note : ''),
+          { bold: true, color: isConcerning(s) ? RED : BLACK, after: 1.5 });
+        doc.addImage(url, 'JPEG', M, y, w, h);
+        y += h + 8;
+      });
+    }
+
+    // Footer with page numbers
+    var pages = doc.getNumberOfPages();
+    for (var i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, GREY);
+      doc.text('Portia - medication & symptom log', M, PAGE_H - 8);
+      doc.text('Page ' + i + ' of ' + pages, M + W, PAGE_H - 8, { align: 'right' });
+    }
+    var name = 'Portia-vet-log-' + toDateInput(new Date()) + '.pdf';
+    return { blob: doc.output('blob'), name: name, pages: pages };
+  }
+
+  var lastPdf = null;
+  function showPdfReady(pdf) {
+    lastPdf = pdf;
+    var canShare = false;
+    try {
+      canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([pdf.blob], pdf.name, { type: 'application/pdf' })] }));
+    } catch (e) { canShare = false; }
+    openDialog('PDF ready',
+      '<p>' + esc(pdf.name) + ' — ' + pdf.pages + ' page' + (pdf.pages === 1 ? '' : 's') + ', ' + Math.max(1, Math.round(pdf.blob.size / 1024)) + ' KB.</p>' +
+      (canShare ? '<button type="button" class="btn btn-big" id="pdf-share">📤 Send / share PDF</button>' : '') +
+      '<button type="button" class="btn' + (canShare ? ' btn-secondary' : ' btn-big') + '" id="pdf-open">📄 Open / save PDF</button>' +
+      '<p class="note">Sharing lets you pick Mail, Messages, WhatsApp or “Save to Files”.</p>',
+      null, 'Done', true);
+  }
+  $('#dialog-body').addEventListener('click', function (ev) {
+    if (!lastPdf) return;
+    if (ev.target.closest('#pdf-share')) {
+      var file = new File([lastPdf.blob], lastPdf.name, { type: 'application/pdf' });
+      navigator.share({ files: [file], title: 'Portia - medication & symptom log' }).catch(function (e) {
+        if (e && e.name !== 'AbortError') openPdf();
+      });
+    } else if (ev.target.closest('#pdf-open')) {
+      openPdf();
+    }
+  });
+  function openPdf() {
+    var url = URL.createObjectURL(lastPdf.blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = lastPdf.name; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }
+
   /* ---------- export / import ---------- */
   function exportData() {
     var data = JSON.parse(JSON.stringify(state));
@@ -1031,6 +1351,8 @@
   }
 
   $('#btn-export').addEventListener('click', exportData);
+  $('#btn-pdf').addEventListener('click', pdfOptionsDialog);
+  $('#btn-pdf-settings').addEventListener('click', pdfOptionsDialog);
   $('#import-merge').addEventListener('change', function (e) { importFile(e.target, 'merge'); });
   $('#import-replace').addEventListener('change', function (e) { importFile(e.target, 'replace'); });
 
