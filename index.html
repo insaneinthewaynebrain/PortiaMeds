@@ -23,6 +23,7 @@
       <symbol id="i-today" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-log" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
       <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+      <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-9"/><path d="M15 6h6v6"/></symbol>
       <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
       <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
     </defs>
@@ -123,6 +124,62 @@
       </div>
     </section>
 
+    <!-- TRENDS -->
+    <section id="view-trends" class="view view-narrow" aria-label="Health trends">
+      <div class="card">
+        <div class="card-head">
+          <h2>Health trend</h2>
+          <div class="range-toggle" role="group" aria-label="Time range">
+            <button type="button" data-trend-range="7" class="active" aria-pressed="true">7 days</button>
+            <button type="button" data-trend-range="30" aria-pressed="false">30 days</button>
+          </div>
+        </div>
+        <div id="trend-summary"></div>
+        <h3 class="chart-title">Daily wellbeing score</h3>
+        <div id="trend-chart" class="chart-wrap"></div>
+        <div class="legend">
+          <span class="lg"><i class="sw sw-good"></i>Good (70+)</span>
+          <span class="lg"><i class="sw sw-fair"></i>Fair (45–69)</span>
+          <span class="lg"><i class="sw sw-poor"></i>Poor (&lt;45)</span>
+          <span class="lg"><i class="sw sw-warn"></i>Over wee/poo limit</span>
+        </div>
+        <p class="note">Tap a day to see how its score was made up.</p>
+        <div id="trend-detail" class="trend-detail"></div>
+      </div>
+
+      <div class="card">
+        <h2>Timeline</h2>
+        <div id="timeline-chart" class="chart-wrap"></div>
+        <div class="legend">
+          <span class="lg"><i class="dotsw ev-food"></i>Food</span>
+          <span class="lg"><i class="dotsw ev-water"></i>Water</span>
+          <span class="lg"><i class="dotsw ev-wee"></i>Wee</span>
+          <span class="lg"><i class="dotsw ev-poo"></i>Poo</span>
+          <span class="lg"><i class="dotsw ev-vomit"></i>Vomit</span>
+          <span class="lg"><i class="dotsw ev-dose"></i>Dose</span>
+          <span class="lg"><i class="sw sw-warn"></i>Over limit</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Alert limits</h2>
+        <p class="muted small">If she goes longer than this without a wee or poo being logged, the day is flagged in red and its score drops.</p>
+        <label class="field"><span>Longest time without a wee (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="wee"></label>
+        <label class="field"><span>Longest time without a poo (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="poo"></label>
+        <p class="note">The “Call the vet” poo reminder on the Today screen still uses the vet’s 48 hours; this limit only affects the graph.</p>
+        <details class="how">
+          <summary>How the score works</summary>
+          <ul>
+            <li>Each day starts from: visual check 35%, eating 20%, drinking 15%, wee 15%, poo 15%. A day with no visual check is scored on the rest.</li>
+            <li>Eating: 3 meals she ate herself is a full day. Drinking: about 2 medium drinks. Help from you counts 60%.</li>
+            <li>Wee and poo score well while the longest gap stays under half the limit, and fall to zero at twice the limit.</li>
+            <li>Each vomit takes off 10 points (up to 30).</li>
+            <li>Good is 70 or more, Fair 45–69, Poor under 45. Improving or declining compares the latest few days with the few before.</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+
     <!-- SETTINGS -->
     <section id="view-settings" class="view view-cols" aria-label="Settings">
       <div class="card">
@@ -169,6 +226,7 @@
       <button data-view="today" class="tab active"><svg class="ico"><use href="#i-today"/></svg><span>Today</span></button>
       <button data-view="log" class="tab"><svg class="ico"><use href="#i-log"/></svg><span>Log</span></button>
       <button data-view="symptoms" class="tab"><svg class="ico"><use href="#i-activity"/></svg><span>Activities</span></button>
+      <button data-view="trends" class="tab"><svg class="ico"><use href="#i-trend"/></svg><span>Trends</span></button>
       <button data-view="settings" class="tab"><svg class="ico"><use href="#i-settings"/></svg><span>Settings</span></button>
     </div>
   </nav>

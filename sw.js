@@ -1,5 +1,5 @@
 /* Poorly Pet service worker: network-first with offline fallback, and notification clicks. */
-var CACHE = 'poorly-pet-v7';
+var CACHE = 'poorly-pet-v8';
 var FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png', 'vendor/jspdf.umd.min.js'];
 
 self.addEventListener('install', function (e) {

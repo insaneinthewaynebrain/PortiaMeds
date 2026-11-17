@@ -22,7 +22,10 @@ Designed for iPhone, and also lays out in columns on wider screens such as an un
   - Lactulose warnings: "STOP if diarrhoea" and "can increase to 1 ml if no poo by day 2".
   - Gabapentin: once 2 doses have been given in 24 hours, the third shows as *optional* (only if she's still straining).
   - Metacam is shown as **PAUSED**: "Stopped by vet for 24–48 hours, ask before restarting".
-- **Activities** with five buttons, each opening a quick form with a note (poo, wee and vomit can also have a **photo**):
+- **Dose picker** on each medication tile: choose 0.1–3.0 ml, then **Given now**. It remembers the last dose given for each medication separately (0.5 ml the first time) and shows the vet's dose beside it, turning amber if they differ. The amount is saved with every dose and shown in the history and PDF.
+- **Visual check** (the Check button): how she looks, from Very tired (1) to Energetic & happy (5), plus optional Hiding / Playful / Grooming well.
+- **Trends** tab: a daily wellbeing score (0–100) for 7 or 30 days, an Improving / Steady / Declining label, and a colour-coded timeline of food, water, wee, poo, vomit and doses. Tap a day to see how its score was made up. The score combines the visual check (35%), eating (20%), drinking (15%), wee (15%) and poo (15%), minus 10 points per vomit. Going longer than the alert limit without a wee (default 12 h) or poo (default 48 h) lowers the score and shades the day red; both limits can be changed on the Trends tab. The charts are plain SVG drawn by the app, so they work offline.
+- **Activities** with six buttons, each opening a quick form with a note (poo, wee and vomit can also have a **photo**):
   - **Pooed**: solid or diarrhoea (default solid), blood or not (default no blood), on her own or needed help.
   - **Weed**: small, medium or large, blood or not (default no blood), on her own or needed help.
   - **Vomited**: photo and note.

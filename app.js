@@ -18,6 +18,7 @@
     { id: 'vomited', label: 'Vomited', short: 'Vomit', emoji: '🤮', tone: 'bad', photo: true },
     { id: 'ate_well', label: 'Ate food', short: 'Food', legacyLabel: 'Ate well', emoji: '🍽️', tone: 'good' },
     { id: 'drank', label: 'Drank water', short: 'Water', emoji: '💧', tone: 'good' },
+    { id: 'check', label: 'Visual check', short: 'Check', emoji: '👀', tone: 'good' },
     { id: 'strained', label: 'Strained', emoji: '😣', tone: 'bad', hidden: true },
     { id: 'blood_wee', label: 'Blood in wee', emoji: '🩸', tone: 'bad', hidden: true },
     { id: 'diarrhoea', label: 'Diarrhoea', emoji: '🟤', tone: 'bad', hidden: true },
@@ -55,8 +56,25 @@
         { value: 'Dry', label: 'Dry food', text: 'dry food' },
         { value: 'Both', label: 'Both', text: 'wet and dry food' }] },
       HELP_FIELD],
-    drank: [amountField(), HELP_FIELD]
+    drank: [amountField(), HELP_FIELD],
+    // Owner's visual check. 'score' (1-5) feeds the health trend graph. Extras are recorded but not scored.
+    check: [
+      { name: 'level', label: 'How does she look?', required: true, stack: true, options: [
+        { value: 'Very tired', label: 'Very tired', text: 'very tired', score: 1, bad: true },
+        { value: 'Low energy', label: 'Low energy', text: 'low energy', score: 2, bad: true },
+        { value: 'Normal', label: 'Normal', text: 'normal', score: 3 },
+        { value: 'Bright', label: 'Bright', text: 'bright', score: 4 },
+        { value: 'Energetic & happy', label: 'Energetic & happy', text: 'energetic & happy', score: 5 }] },
+      { name: 'extras', label: 'Also noticed (optional)', multi: true, options: [
+        { value: 'Hiding', label: 'Hiding', text: 'hiding' },
+        { value: 'Playful', label: 'Playful', text: 'playful' },
+        { value: 'Grooming well', label: 'Grooming well', text: 'grooming well' }] }
+    ]
   };
+  function checkScore(e) {
+    var o = ENTRY_FIELDS.check[0].options.filter(function (x) { return x.value === e.level; })[0];
+    return o ? o.score : null;
+  }
   var SYMPTOM_BY_ID = {};
   SYMPTOMS.forEach(function (s) { SYMPTOM_BY_ID[s.id] = s; });
 
@@ -107,6 +125,10 @@
     ];
   }
 
+  function defaultTrend() {
+    return { weeGapHours: 12, pooGapHours: 48 };
+  }
+
   function defaultProfile() {
     return { petName: 'Portia', vetName: 'Avondale, Warwick', vetPhone: '01926 400 255' };
   }
@@ -120,7 +142,8 @@
       followups: defaultFollowups(),
       reviewDone: false,
       notified: {},   // key -> true, to avoid repeat notifications
-      profile: defaultProfile()
+      profile: defaultProfile(),
+      trend: defaultTrend()
     };
   }
 
@@ -149,7 +172,8 @@
       followups: Array.isArray(s.followups) ? s.followups : base.followups,
       reviewDone: !!s.reviewDone,
       notified: (s.notified && typeof s.notified === 'object') ? s.notified : {},
-      profile: (s.profile && typeof s.profile === 'object') ? s.profile : defaultProfile()
+      profile: (s.profile && typeof s.profile === 'object') ? s.profile : defaultProfile(),
+      trend: (s.trend && typeof s.trend === 'object') ? s.trend : defaultTrend()
     };
   }
 
@@ -315,10 +339,47 @@
   });
 
   /* ---------- dose logging ---------- */
-  function logDose(medId, time, note) {
+  // Dose picker: 0.1 - 3.0 ml. The "remembered" dose is simply the last logged dose for that
+  // medication (read from the log, so nothing extra is stored). No doses yet -> 0.5 ml.
+  var DOSE_OPTIONS = [];
+  for (var di = 1; di <= 30; di++) DOSE_OPTIONS.push(di / 10);
+  var DEFAULT_DOSE_ML = 0.5;
+  var pendingDose = {};   // medId -> amount picked on the tile but not given yet
+
+  function roundDose(a) { return Math.round(a * 10) / 10; }
+  function doseAmountOf(d) {
+    if (typeof d.amountMl === 'number' && isFinite(d.amountMl)) return d.amountMl;
+    var m = /(\d+(?:\.\d+)?)\s*ml/i.exec(d.dose || '');   // older entries: "0.4 ml by mouth"
+    return m ? parseFloat(m[1]) : null;
+  }
+  function defaultDoseFor(medId) {
+    var last = lastDose(medId);
+    var a = last ? doseAmountOf(last) : null;
+    if (a == null) return DEFAULT_DOSE_ML;
+    a = roundDose(a);
+    return (a >= 0.1 && a <= 3.0) ? a : DEFAULT_DOSE_ML;
+  }
+  function selectedDose(medId) {
+    return pendingDose[medId] != null ? pendingDose[medId] : defaultDoseFor(medId);
+  }
+  function doseText(med, amt) {
+    var m = /^\s*\d+(?:\.\d+)?\s*ml\b(.*)$/i.exec((med && med.dose) || '');
+    return amt.toFixed(1) + ' ml' + (m ? m[1] : ' by mouth');
+  }
+  function doseSelectHtml(attrs, current, firstOption, bare) {
+    var h = '<select ' + attrs + '>' + (firstOption || '');
+    DOSE_OPTIONS.forEach(function (v) {
+      h += '<option value="' + v.toFixed(1) + '"' + (Math.abs(v - current) < 0.001 ? ' selected' : '') + '>' + v.toFixed(1) + (bare ? '' : ' ml') + '</option>';
+    });
+    return h + '</select>';
+  }
+
+  function logDose(medId, time, note, amount) {
     var med = medById(medId);
-    var dose = { id: uid(), medId: medId, time: time.toISOString(), dose: med ? med.dose : '', note: note || '' };
+    var amt = (typeof amount === 'number' && isFinite(amount)) ? amount : selectedDose(medId);
+    var dose = { id: uid(), medId: medId, time: time.toISOString(), dose: doseText(med, amt), amountMl: amt, note: note || '' };
     state.doses.push(dose);
+    delete pendingDose[medId];
     save();
     renderAll();
     return dose;
@@ -335,8 +396,8 @@
           ').\n\nAre you sure you want to log another dose now?')) return;
       }
     }
-    var dose = logDose(medId, new Date(), '');
-    toast(med.name + ' logged at ' + fmtTime(new Date(dose.time)), 'Edit', function () { editEntry('dose', dose.id); });
+    var dose = logDose(medId, new Date(), '', selectedDose(medId));
+    toast(med.name + ' ' + dose.amountMl.toFixed(1) + ' ml logged at ' + fmtTime(new Date(dose.time)), 'Edit', function () { editEntry('dose', dose.id); });
   }
 
   function givenEarlier(medId) {
@@ -344,14 +405,16 @@
     var body =
       '<p class="muted">Use this if you gave ' + esc(med.name) + ' earlier and are logging it late.</p>' +
       '<label class="field"><span>Time given</span><input type="datetime-local" name="time" required value="' + toLocalInput(new Date()) + '"></label>' +
+      '<label class="field"><span>Dose</span>' + doseSelectHtml('name="doseml"', selectedDose(medId)) + '</label>' +
       '<label class="field"><span>Note (optional)</span><textarea name="note" placeholder="e.g. took it with food, spat some out"></textarea></label>';
     openDialog('Log ' + med.name + ' at another time', body, function (rv, dlg) {
       if (rv !== 'ok') return;
       var t = fromLocalInput(dlg.querySelector('[name=time]').value);
       if (!t) return;
       if (t.getTime() > Date.now() + 5 * 60000 && !confirm('That time is in the future. Log it anyway?')) return;
-      logDose(medId, t, dlg.querySelector('[name=note]').value.trim());
-      toast(med.name + ' logged for ' + fmtDayTime(t));
+      var amt = parseFloat(dlg.querySelector('[name=doseml]').value);
+      logDose(medId, t, dlg.querySelector('[name=note]').value.trim(), amt);
+      toast(med.name + ' ' + amt.toFixed(1) + ' ml logged for ' + fmtDayTime(t));
     }, 'Log dose');
   }
 
@@ -361,11 +424,16 @@
     for (var i = 0; i < list.length; i++) if (list[i].id === id) entry = list[i];
     if (!entry) return;
     if (kind === 'symptom') { symptomDialog(entry.type, entry); return; }
-    var title, extra = '';
+    var title, extra = '', med = null, curDose = null, doseInList = false;
     if (kind === 'dose') {
-      var med = medById(entry.medId);
+      med = medById(entry.medId);
       title = 'Edit ' + (med ? med.name : 'dose');
-      extra = '<label class="field"><span>Dose given</span><input type="text" name="dose" value="' + esc(entry.dose) + '"></label>';
+      var raw = doseAmountOf(entry);
+      curDose = raw == null ? null : roundDose(raw);
+      doseInList = curDose != null && curDose >= 0.1 && curDose <= 3.0;
+      // Entries whose dose isn't on the 0.1-3.0 list keep their text unless a new value is picked.
+      var keepOpt = doseInList ? '' : '<option value="" selected>' + esc(entry.dose || 'Not recorded') + ' (unchanged)</option>';
+      extra = '<label class="field"><span>Dose given</span>' + doseSelectHtml('name="doseml"', doseInList ? curDose : -1, keepOpt) + '</label>';
     } else {
       var sym = SYMPTOM_BY_ID[entry.type];
       title = 'Edit: ' + (sym ? sym.label : entry.type);
@@ -388,8 +456,12 @@
       var t = fromLocalInput(tv);
       if (t && tv !== toLocalInput(new Date(entry.time))) entry.time = t.toISOString();
       entry.note = dlg.querySelector('[name=note]').value.trim();
-      var doseEl = dlg.querySelector('[name=dose]');
-      if (doseEl) entry.dose = doseEl.value.trim();
+      var doseEl = dlg.querySelector('[name=doseml]');
+      // Only touch the dose if a different amount was picked (so opening + saving never changes old entries).
+      if (doseEl && doseEl.value !== '' && (!doseInList || parseFloat(doseEl.value) !== curDose)) {
+        entry.amountMl = parseFloat(doseEl.value);
+        entry.dose = doseText(med, entry.amountMl);
+      }
       save(); renderAll(); toast('Saved');
     });
   }
@@ -515,9 +587,11 @@
     var fields = ENTRY_FIELDS[e.type] || [];
     var parts = [];
     fields.forEach(function (f) {
-      var v = fieldValue(e, f);
-      var opt = f.options.filter(function (o) { return o.value === v; })[0];
-      if (opt) parts.push({ text: opt.text, bad: !!opt.bad });
+      var vals = f.multi ? (Array.isArray(e[f.name]) ? e[f.name] : []) : [fieldValue(e, f)];
+      vals.forEach(function (v) {
+        var opt = f.options.filter(function (o) { return o.value === v; })[0];
+        if (opt) parts.push({ text: opt.text, bad: !!opt.bad });
+      });
     });
     var label = (fields.length && !parts.length && sym.legacyLabel) ? sym.legacyLabel : sym.label;
     return { sym: sym, label: label, parts: parts };
@@ -538,11 +612,16 @@
   }
   function isDiarrhoea(e) { return e.type === 'diarrhoea' || (e.type === 'poo_normal' && e.consistency === 'Diarrhoea'); }
 
-  function segHtml(name, options, current) {
-    return '<div class="seg" role="radiogroup">' + options.map(function (o) {
-      var id = 'seg-' + name + '-' + o.value;
-      return '<input type="radio" name="' + name + '" id="' + id + '" value="' + esc(o.value) + '"' + (current === o.value ? ' checked' : '') + '>' +
-        '<label for="' + id + '" class="' + (o.bad ? 'bad' : '') + '">' + esc(o.label) + '</label>';
+  // Radio buttons (one choice) or checkboxes (f.multi), drawn as big tappable buttons.
+  function segHtml(name, options, current, f) {
+    f = f || {};
+    return '<div class="seg' + (f.stack ? ' stack' : '') + (f.multi ? ' multi' : '') + '" role="' + (f.multi ? 'group' : 'radiogroup') + '">' + options.map(function (o) {
+      var id = 'seg-' + name + '-' + String(o.value).replace(/[^A-Za-z0-9]+/g, '_');
+      var on = f.multi ? (current || []).indexOf(o.value) !== -1 : current === o.value;
+      return '<input type="' + (f.multi ? 'checkbox' : 'radio') + '" name="' + name + '" id="' + id + '" value="' + esc(o.value) + '"' +
+        (on ? ' checked' : '') + (f.required && !f.multi ? ' required' : '') + '>' +
+        '<label for="' + id + '" class="' + (o.bad ? 'bad' : '') + '">' +
+        (o.score ? '<span class="seg-score">' + o.score + '</span>' : '') + esc(o.label) + '</label>';
     }).join('') + '</div>';
   }
 
@@ -557,8 +636,8 @@
     var body = '<label class="field"><span>Time</span><input type="datetime-local" name="time" required value="' +
       initialTime + '"></label>';
     fields.forEach(function (f) {
-      var current = isNew ? (f.def || '') : fieldValue(entry, f);
-      body += '<div class="field"><span>' + esc(f.label) + '</span>' + segHtml(f.name, f.options, current) + '</div>';
+      var current = f.multi ? (isNew ? [] : (entry[f.name] || [])) : (isNew ? (f.def || '') : fieldValue(entry, f));
+      body += '<div class="field"><span>' + esc(f.label) + '</span>' + segHtml(f.name, f.options, current, f) + '</div>';
     });
     var hasPhoto = !!(entry && entry.photoId);
     if (sym.photo || hasPhoto) body += '<div class="field"><span>Photo (optional)</span>' +
@@ -590,6 +669,11 @@
       e.note = dlg.querySelector('[name=note]').value.trim();
       // Only write fields that were actually chosen, so editing an older entry never adds data to it.
       fields.forEach(function (f) {
+        if (f.multi) {
+          var picked = [].slice.call(dlg.querySelectorAll('[name=' + f.name + ']:checked')).map(function (x) { return x.value; });
+          if (picked.length || Array.isArray(e[f.name])) e[f.name] = picked;
+          return;
+        }
         var c = dlg.querySelector('[name=' + f.name + ']:checked');
         if (c) e[f.name] = f.bool ? c.value === 'yes' : c.value;
       });
@@ -739,6 +823,8 @@
 
   // Compact, side-by-side timer tiles for active medications; paused ones as a single line.
   function renderMeds() {
+    var ae = document.activeElement;
+    if (ae && ae.classList && ae.classList.contains('dose-select')) return;   // don't close the open picker
     var now = Date.now();
     var tiles = '', paused = '';
     state.meds.forEach(function (med) {
@@ -750,20 +836,25 @@
       }
       var h = '<div class="med-tile state-' + st.state + '" data-med="' + esc(med.id) + '" data-state="' + st.state + '">';
       h += '<div class="tile-head"><span class="tile-name">' + esc(med.name) + '</span>' + statusPill(st) + '</div>';
-      h += '<div class="tile-dose">' + esc(med.dose) + '</div>';
       if (st.state === 'new') {
         h += '<div class="tile-label">Not started</div><div class="tile-meta">Tap “Given now” after the first dose</div>';
       } else {
-        h += '<div class="tile-label">' + (st.diff <= 0 ? 'Overdue by' : 'Due in') + '</div>';
+        h += '<div class="tile-label"><span>' + (st.diff <= 0 ? 'Overdue by' : 'Due in') + '</span><span class="tile-n">' + st.count24 + ' in 24h</span></div>';
         h += '<div class="tile-count" data-countdown="' + st.next + '" data-fmt="short">' + fmtShort(st.diff) + '</div>';
         h += '<div class="tile-meta">Next <strong>' + esc(fmtWhen(new Date(st.next))) + '</strong></div>';
         h += '<div class="tile-meta">Last ' + esc(fmtWhen(new Date(st.lastT))) + (st.last.dose && st.last.dose !== med.dose ? ' (' + esc(st.last.dose) + ')' : '') + '</div>';
-        h += '<div class="tile-meta">' + st.count24 + ' dose' + (st.count24 === 1 ? '' : 's') + ' in 24h</div>';
       }
       if (med.notes) h += '<div class="tile-note">' + esc(med.notes) + '</div>';
       medWarnings(med, st).forEach(function (w) {
         h += '<div class="tile-warn' + (w.bad ? ' bad' : '') + '">' + esc(w.text) + '</div>';
       });
+      var rxM = /^\s*(\d+(?:\.\d+)?)\s*ml/i.exec(med.dose || '');
+      var rxMl = rxM ? parseFloat(rxM[1]) : null;
+      var curMl = selectedDose(med.id);
+      h += '<div class="dose-pick">' +
+        doseSelectHtml('class="dose-select" data-id="' + esc(med.id) + '" aria-label="Dose in ml for ' + esc(med.name) + '"', curMl, '', true) +
+        '<span class="rx' + (rxMl != null && Math.abs(rxMl - curMl) > 0.001 ? ' diff' : '') + '"' + (rxMl != null ? ' data-ml="' + rxMl + '"' : '') +
+        ' title="Vet dose, as set in Settings">ml' + (rxMl != null ? ' · vet ' + rxMl : '') + '</span></div>';
       h += '<button class="btn tile-given" data-action="given" data-id="' + esc(med.id) + '">Given now</button>';
       h += '<div class="tile-links"><button class="link-btn" data-action="earlier" data-id="' + esc(med.id) + '">Earlier time</button>';
       if (st.last) h += '<button class="link-btn" data-action="edit-last" data-id="' + esc(st.last.id) + '">Edit last</button>';
@@ -911,6 +1002,341 @@
     renderNotifyStatus();
   }
 
+  /* ---------- health trends ---------- */
+  // A daily wellbeing score (0-100) worked out from the existing log. Nothing is stored for it
+  // (only the two alert limits), so old entries are used as they are.
+  var TREND = {
+    weights: { check: 0.35, eat: 0.20, drink: 0.15, wee: 0.15, poo: 0.15 },
+    eatTarget: 3,        // "meal points" that count as a full day (a meal she ate herself = 1, with help = 0.6)
+    drinkTarget: 2,      // "drink points" for a full day (small 0.5, medium 0.75, large 1; with help x0.6)
+    vomitPenalty: 10,    // points taken off per vomit...
+    vomitPenaltyMax: 30, // ...up to this much
+    awakeHours: 16,      // eating/drinking targets are scaled down for part-days (today, first day)
+    good: 70, fair: 45   // score bands
+  };
+  var AMOUNT_FACTOR = { Small: 0.5, Medium: 0.75, Large: 1 };
+  var LANES = [
+    { kind: 'food', label: 'Food' }, { kind: 'water', label: 'Water' }, { kind: 'wee', label: 'Wee' },
+    { kind: 'poo', label: 'Poo' }, { kind: 'vomit', label: 'Vomit' }, { kind: 'dose', label: 'Dose' }
+  ];
+  var trendRange = 7;
+  var trendSel = null;   // index of the day picked on the chart (null = latest)
+
+  function trendLimits() {
+    var t = state.trend || {};
+    var w = Number(t.weeGapHours), p = Number(t.pooGapHours);
+    return { wee: w > 0 ? w : 12, poo: p > 0 ? p : 48 };
+  }
+  // Which timeline lane an activity belongs to. Older entry types still count.
+  function eventKind(type) {
+    switch (type) {
+      case 'ate_well': return 'food';
+      case 'drank': return 'water';
+      case 'wee_normal': case 'blood_wee': return 'wee';
+      case 'poo_normal': case 'diarrhoea': return 'poo';
+      case 'vomited': return 'vomit';
+      default: return null;
+    }
+  }
+  function helpFactor(e) { return e.help === 'helped' ? 0.6 : 1; }
+  // 1 while the gap is comfortably inside the limit, falling to 0 at twice the limit.
+  function gapScore(hours, limit) {
+    var r = hours / limit;
+    if (r <= 0.5) return 1;
+    if (r <= 1) return 1 - 0.4 * (r - 0.5) / 0.5;
+    if (r < 2) return 0.6 * (2 - r);
+    return 0;
+  }
+  function scoreBand(s) { return s >= TREND.good ? 'good' : (s >= TREND.fair ? 'fair' : 'poor'); }
+  var BAND_LABEL = { good: 'Good', fair: 'Fair', poor: 'Poor' };
+
+  function computeTrend(n) {
+    var now = Date.now(), lim = trendLimits();
+    var first = Infinity, times = {}, events = [];
+    LANES.forEach(function (l) { times[l.kind] = []; });
+    state.symptoms.forEach(function (s) {
+      var t = new Date(s.time).getTime();
+      if (isNaN(t)) return;
+      if (t < first) first = t;
+      var k = eventKind(s.type);
+      if (k) { events.push({ kind: k, t: t }); times[k].push(t); }
+    });
+    state.doses.forEach(function (d) {
+      var t = new Date(d.time).getTime();
+      if (isNaN(t)) return;
+      if (t < first) first = t;
+      events.push({ kind: 'dose', t: t }); times.dose.push(t);
+    });
+    if (first === Infinity) return null;
+    Object.keys(times).forEach(function (k) { times[k].sort(function (a, b) { return a - b; }); });
+
+    // Longest stretch without an event inside [ws, we], counting from the last event before ws
+    // (or from when tracking began if there wasn't one).
+    function longestGap(arr, ws, we) {
+      var cursor = first, i = 0, max = 0;
+      for (; i < arr.length && arr[i] <= ws; i++) cursor = arr[i];
+      for (; i < arr.length && arr[i] <= we; i++) { max = Math.max(max, arr[i] - cursor); cursor = arr[i]; }
+      return Math.max(max, we - cursor) / HOUR;
+    }
+    function gapBands(arr, limH) {
+      var out = [], cursor = first;
+      function add(a, b) { var st = a + limH * HOUR; if (b > st) out.push([st, b]); }
+      arr.forEach(function (t) { if (t <= now) { add(cursor, t); cursor = t; } });
+      add(cursor, now);
+      return out;
+    }
+
+    function scoreDay(dsD, deD) {
+      var ds = dsD.getTime(), de = deD.getTime();
+      var ws = Math.max(ds, first), we = Math.min(de, now);
+      var day = { date: dsD, start: ds, end: de, hasData: false, score: null, warn: false };
+      if (we <= ws) return day;
+      var winH = (we - ws) / HOUR;
+      var p = { checkSum: 0, checkN: 0, eatPts: 0, drinkPts: 0, food: 0, water: 0, wee: 0, poo: 0, vomit: 0, dose: 0, symptoms: 0 };
+      state.symptoms.forEach(function (s) {
+        var t = new Date(s.time).getTime();
+        if (!(t >= ds && t < de)) return;
+        p.symptoms++;
+        var sc = s.type === 'check' ? checkScore(s) : null;
+        if (sc != null) { p.checkSum += sc; p.checkN++; }
+        switch (eventKind(s.type)) {
+          case 'food': p.eatPts += helpFactor(s); p.food++; break;
+          case 'water': p.drinkPts += (AMOUNT_FACTOR[s.amount] || 0.75) * helpFactor(s); p.water++; break;
+          case 'wee': p.wee++; break;
+          case 'poo': p.poo++; break;
+          case 'vomit': p.vomit++; break;
+        }
+      });
+      state.doses.forEach(function (d) {
+        var t = new Date(d.time).getTime();
+        if (t >= ds && t < de) p.dose++;
+      });
+      // Not enough to judge a short part-day with nothing logged (e.g. just after midnight).
+      if (winH < 6 && p.symptoms === 0) return day;
+
+      var c = {};
+      if (p.checkN) { p.checkAvg = p.checkSum / p.checkN; c.check = (p.checkAvg - 1) / 4; }
+      var prog = Math.min(1, Math.max(0.25, winH / TREND.awakeHours));
+      if (winH >= 6 || p.eatPts > 0) c.eat = Math.min(1, p.eatPts / (TREND.eatTarget * prog));
+      if (winH >= 6 || p.drinkPts > 0) c.drink = Math.min(1, p.drinkPts / (TREND.drinkTarget * prog));
+      p.weeGap = longestGap(times.wee, ws, we);
+      p.pooGap = longestGap(times.poo, ws, we);
+      c.wee = gapScore(p.weeGap, lim.wee);
+      c.poo = gapScore(p.pooGap, lim.poo);
+      var wsum = 0, tot = 0;
+      Object.keys(c).forEach(function (k) { wsum += TREND.weights[k]; tot += TREND.weights[k] * c[k]; });
+      p.penalty = Math.min(TREND.vomitPenaltyMax, p.vomit * TREND.vomitPenalty);
+      day.score = Math.max(0, Math.min(100, Math.round(tot / wsum * 100 - p.penalty)));
+      day.comp = c; day.p = p; day.hasData = true;
+      day.weeOver = p.weeGap > lim.wee;
+      day.pooOver = p.pooGap > lim.poo;
+      day.warn = day.weeOver || day.pooOver;
+      return day;
+    }
+
+    var t0 = new Date(now), today = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate());
+    var days = [];
+    for (var i = 0; i < n; i++) {
+      var ds = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (n - 1 - i));
+      var de = new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1);
+      days.push(scoreDay(ds, de));
+    }
+    function lastBefore(arr) { var v = null; arr.forEach(function (t) { if (t <= now) v = t; }); return v; }
+    return {
+      days: days, events: events, lim: lim, now: now, first: first,
+      rs: days[0].start, re: days[n - 1].end,
+      bands: { wee: gapBands(times.wee, lim.wee), poo: gapBands(times.poo, lim.poo) },
+      lastWee: lastBefore(times.wee), lastPoo: lastBefore(times.poo)
+    };
+  }
+
+  function fmtHM(ms) {
+    var m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60);
+    return h > 0 ? h + 'h ' + pad(m % 60) + 'm' : m + 'm';
+  }
+  function fmtGapH(h) { return fmtHM(h * HOUR); }
+  function dayLong(d) { return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function dayAxis(d, i, n, cw) {
+    if (n <= 7) return cw >= 40 ? d.toLocaleDateString([], { weekday: 'short' }) + ' ' + d.getDate() : d.toLocaleDateString([], { weekday: 'short' });
+    return ((n - 1 - i) % 5 === 0) ? d.getDate() + ' ' + d.toLocaleDateString([], { month: 'short' }) : '';
+  }
+  function selectedDayIndex(data) {
+    if (trendSel != null && trendSel >= 0 && trendSel < data.days.length) return trendSel;
+    for (var i = data.days.length - 1; i >= 0; i--) if (data.days[i].hasData) return i;
+    return data.days.length - 1;
+  }
+
+  var CH = { L: 40, R: 8 };
+  function scoreChartSvg(data, W, sel) {
+    var n = data.days.length, T = 10, B = 24, H = 176;
+    var pw = W - CH.L - CH.R, ph = H - T - B, cw = pw / n;
+    var Y = function (v) { return T + ph * (1 - v / 100); };
+    var cx = function (i) { return CH.L + cw * (i + 0.5); };
+    var rad = n <= 7 ? 4.5 : 3;
+    var s = '<svg class="chart" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Daily wellbeing score, 0 to 100, for the last ' + n + ' days">';
+    s += '<rect class="band-poor" x="' + CH.L + '" y="' + Y(TREND.fair) + '" width="' + pw + '" height="' + (Y(0) - Y(TREND.fair)) + '"/>';
+    s += '<rect class="band-fair" x="' + CH.L + '" y="' + Y(TREND.good) + '" width="' + pw + '" height="' + (Y(TREND.fair) - Y(TREND.good)) + '"/>';
+    s += '<rect class="band-good" x="' + CH.L + '" y="' + Y(100) + '" width="' + pw + '" height="' + (Y(TREND.good) - Y(100)) + '"/>';
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      s += '<line class="grid" x1="' + CH.L + '" x2="' + (W - CH.R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '"/>';
+      s += '<text x="' + (CH.L - 6) + '" y="' + (Y(v) + 3.5) + '" text-anchor="end">' + v + '</text>';
+    });
+    data.days.forEach(function (d, i) {
+      if (d.warn) s += '<rect class="warn-col" x="' + (CH.L + cw * i) + '" y="' + T + '" width="' + cw + '" height="' + ph + '"/>';
+    });
+    s += '<rect class="sel-col" x="' + (CH.L + cw * sel) + '" y="' + T + '" width="' + cw + '" height="' + ph + '"/>';
+    var path = '', pen = false;
+    data.days.forEach(function (d, i) {
+      if (d.score == null) { pen = false; return; }
+      path += (pen ? 'L' : 'M') + cx(i).toFixed(1) + ' ' + Y(d.score).toFixed(1) + ' ';
+      pen = true;
+    });
+    if (path) s += '<path class="score-line" d="' + path + '"/>';
+    data.days.forEach(function (d, i) {
+      if (d.score == null) return;
+      s += '<circle class="dot dot-' + scoreBand(d.score) + (d.warn ? ' dot-warn' : '') + '" cx="' + cx(i).toFixed(1) + '" cy="' + Y(d.score).toFixed(1) + '" r="' + rad + '"/>';
+      if (d.warn) s += '<path class="warn-tri" d="M' + (cx(i) - 5) + ' ' + (T + 11) + 'L' + (cx(i) + 5) + ' ' + (T + 11) + 'L' + cx(i) + ' ' + (T + 2) + 'Z"/>';
+    });
+    data.days.forEach(function (d, i) {
+      var lab = dayAxis(d.date, i, n, cw);
+      var lastCol = n > 7 && i === n - 1;
+      if (lab) s += '<text class="axis" x="' + (lastCol ? W - 2 : cx(i).toFixed(1)) + '" y="' + (H - 7) + '" text-anchor="' + (lastCol ? 'end' : 'middle') + '">' + esc(lab) + '</text>';
+      s += '<rect class="hit" data-day="' + i + '" x="' + (CH.L + cw * i) + '" y="' + T + '" width="' + cw + '" height="' + (H - T) + '"><title>' +
+        esc(dayLong(d.date) + (d.score != null ? ': ' + d.score + '/100' : ': no score yet')) + '</title></rect>';
+    });
+    return s + '</svg>';
+  }
+
+  function timelineSvg(data, W, sel) {
+    var n = data.days.length, T = 6, B = 24, LH = 24;
+    var H = T + LANES.length * LH + B, pw = W - CH.L - CH.R, cw = pw / n, span = data.re - data.rs;
+    var X = function (t) { return CH.L + (t - data.rs) / span * pw; };
+    var laneIdx = {}; LANES.forEach(function (l, i) { laneIdx[l.kind] = i; });
+    var rad = n <= 7 ? 4.2 : 2.6;
+    var s = '<svg class="chart" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Timeline of food, water, wee, poo, vomit and doses for the last ' + n + ' days">';
+    LANES.forEach(function (l, i) {
+      var y = T + i * LH;
+      s += '<rect class="lane-bg' + (i % 2 ? ' alt' : '') + '" x="' + CH.L + '" y="' + y + '" width="' + pw + '" height="' + LH + '"/>';
+      s += '<text x="' + (CH.L - 6) + '" y="' + (y + LH / 2 + 3.5) + '" text-anchor="end">' + l.label + '</text>';
+    });
+    s += '<rect class="sel-col" x="' + (CH.L + cw * sel) + '" y="' + T + '" width="' + cw + '" height="' + (LANES.length * LH) + '"/>';
+    for (var i = 0; i <= n; i++) {
+      s += '<line class="grid" x1="' + (CH.L + cw * i) + '" x2="' + (CH.L + cw * i) + '" y1="' + T + '" y2="' + (T + LANES.length * LH) + '"/>';
+    }
+    ['wee', 'poo'].forEach(function (k) {
+      data.bands[k].forEach(function (b) {
+        var a = Math.max(b[0], data.rs), z = Math.min(b[1], data.re);
+        if (z <= a) return;
+        s += '<rect class="gap-band" x="' + X(a).toFixed(1) + '" y="' + (T + laneIdx[k] * LH + 2) + '" width="' + Math.max(1, X(z) - X(a)).toFixed(1) + '" height="' + (LH - 4) + '"/>';
+      });
+    });
+    data.events.forEach(function (ev) {
+      if (ev.t < data.rs || ev.t >= data.re) return;
+      s += '<circle class="ev ev-' + ev.kind + '" cx="' + X(ev.t).toFixed(1) + '" cy="' + (T + laneIdx[ev.kind] * LH + LH / 2) + '" r="' + rad + '"/>';
+    });
+    if (data.now >= data.rs && data.now <= data.re) {
+      s += '<line class="now-line" x1="' + X(data.now).toFixed(1) + '" x2="' + X(data.now).toFixed(1) + '" y1="' + T + '" y2="' + (T + LANES.length * LH) + '"/>';
+    }
+    data.days.forEach(function (d, i) {
+      var lab = dayAxis(d.date, i, n, cw);
+      var lastCol = n > 7 && i === n - 1;
+      if (lab) s += '<text class="axis" x="' + (lastCol ? W - 2 : (CH.L + cw * (i + 0.5)).toFixed(1)) + '" y="' + (H - 7) + '" text-anchor="' + (lastCol ? 'end' : 'middle') + '">' + esc(lab) + '</text>';
+      s += '<rect class="hit" data-day="' + i + '" x="' + (CH.L + cw * i) + '" y="' + T + '" width="' + cw + '" height="' + (H - T) + '"><title>' + esc(dayLong(d.date)) + '</title></rect>';
+    });
+    return s + '</svg>';
+  }
+
+  function trendSummaryHtml(data) {
+    var scored = data.days.filter(function (d) { return d.score != null; });
+    var h = '';
+    if (!scored.length) {
+      h += '<p class="muted">Not enough logged yet to score a day. Log meals, drinks, wees, poos and a visual check and it will appear here.</p>';
+    } else {
+      var latest = scored[scored.length - 1], band = scoreBand(latest.score);
+      var isToday = latest === data.days[data.days.length - 1];
+      var k = Math.min(trendRange === 30 ? 7 : 3, Math.floor(scored.length / 2));
+      var dir = null;
+      if (scored.length >= 4 && k >= 1) {
+        var avg = function (a) { return a.reduce(function (x, d) { return x + d.score; }, 0) / a.length; };
+        var delta = avg(scored.slice(-k)) - avg(scored.slice(-2 * k, -k));
+        dir = { delta: delta, kind: delta >= 5 ? 'up' : (delta <= -5 ? 'down' : 'flat') };
+      }
+      h += '<div class="trend-top"><div class="score-badge ' + band + '"><span class="score-num">' + latest.score + '</span><span class="score-of">/100</span></div>';
+      h += '<div class="trend-meta">';
+      if (dir) {
+        h += '<div class="trend-dir ' + dir.kind + '">' + (dir.kind === 'up' ? '▲ Improving' : (dir.kind === 'down' ? '▼ Declining' : '▬ Steady')) + '</div>';
+        h += '<div class="muted small">' + (dir.delta > 0 ? '+' : '') + Math.round(dir.delta) + ' points vs the previous ' + k + ' days</div>';
+      } else {
+        h += '<div class="trend-dir flat">Trend needs 4 days of data</div>';
+      }
+      h += '<div class="muted small">' + (isToday ? 'Today' : esc(dayLong(latest.date))) + ': ' + BAND_LABEL[band] + '</div></div></div>';
+    }
+    function chip(label, last, limit) {
+      var ms = data.now - (last != null ? last : data.first);
+      var over = ms > limit * HOUR;
+      return '<div class="since-chip' + (over ? ' over' : '') + '"><span>' + label + '</span><strong>' +
+        (last != null ? fmtHM(ms) : 'none logged') + '</strong><small>' + (over ? 'over the ' + limit + 'h limit' : 'limit ' + limit + 'h') + '</small></div>';
+    }
+    h += '<div class="since-row">' + chip('Since last wee', data.lastWee, data.lim.wee) + chip('Since last poo', data.lastPoo, data.lim.poo) + '</div>';
+    return h;
+  }
+
+  function trendDetailHtml(day, lim) {
+    var name = esc(dayLong(day.date));
+    if (!day.hasData) return '<p class="muted small"><strong>' + name + '</strong> — nothing to score yet.</p>';
+    var p = day.p, c = day.comp, band = scoreBand(day.score);
+    var pct = function (v) { return v == null ? '–' : Math.round(v * 100) + '%'; };
+    var row = function (label, value, comp, bad) {
+      return '<div class="detail-row' + (bad ? ' bad' : '') + '"><span class="dl">' + label + '</span><span class="dv">' + value + '</span><span class="dp">' + pct(comp) + '</span></div>';
+    };
+    var h = '<div class="detail-head"><strong>' + name + '</strong><span class="band-chip ' + band + '">' + day.score + '/100 · ' + BAND_LABEL[band] + '</span></div>';
+    if (day.warn) {
+      var w = [];
+      if (day.weeOver) w.push('no wee for ' + fmtGapH(p.weeGap) + ' (limit ' + lim.wee + 'h)');
+      if (day.pooOver) w.push('no poo for ' + fmtGapH(p.pooGap) + ' (limit ' + lim.poo + 'h)');
+      h += '<div class="flag">Over the limit: ' + esc(w.join('; ')) + '</div>';
+    }
+    h += row('Visual check', p.checkN ? p.checkAvg.toFixed(1) + ' / 5 (' + p.checkN + ' check' + (p.checkN === 1 ? '' : 's') + ')' : 'not logged (left out)', c.check);
+    h += row('Eating', p.food + ' logged', c.eat);
+    h += row('Drinking', p.water + ' logged', c.drink);
+    h += row('Wee', p.wee + ' logged · longest gap ' + fmtGapH(p.weeGap), c.wee, day.weeOver);
+    h += row('Poo', p.poo + ' logged · longest gap ' + fmtGapH(p.pooGap), c.poo, day.pooOver);
+    h += '<div class="detail-row' + (p.vomit ? ' bad' : '') + '"><span class="dl">Vomiting</span><span class="dv">' + (p.vomit ? p.vomit + ' · −' + p.penalty + ' points' : 'none') + '</span><span class="dp"></span></div>';
+    h += '<div class="detail-row"><span class="dl">Doses given</span><span class="dv">' + p.dose + '</span><span class="dp"></span></div>';
+    return h;
+  }
+
+  function renderTrends() {
+    var view = $('#view-trends');
+    if (!view || !view.classList.contains('active')) return;
+    var data = computeTrend(trendRange);
+    document.querySelectorAll('[data-trend-range]').forEach(function (b) {
+      b.classList.toggle('active', +b.getAttribute('data-trend-range') === trendRange);
+      b.setAttribute('aria-pressed', +b.getAttribute('data-trend-range') === trendRange ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-trend-field]').forEach(function (inp) {
+      if (document.activeElement !== inp) inp.value = trendLimits()[inp.getAttribute('data-trend-field')];
+    });
+    if (!data) {
+      $('#trend-summary').innerHTML = '<p class="muted">Nothing logged yet. Once you log doses and activities, her trend will appear here.</p>';
+      $('#trend-chart').innerHTML = ''; $('#trend-detail').innerHTML = ''; $('#timeline-chart').innerHTML = '';
+      return;
+    }
+    var chartHost = $('#trend-chart');
+    var W = Math.max(280, Math.floor(chartHost.clientWidth || view.clientWidth - 32 || 340));
+    var sel = selectedDayIndex(data);
+    $('#trend-summary').innerHTML = trendSummaryHtml(data);
+    chartHost.innerHTML = scoreChartSvg(data, W, sel);
+    $('#timeline-chart').innerHTML = timelineSvg(data, W, sel);
+    $('#trend-detail').innerHTML = trendDetailHtml(data.days[sel], data.lim);
+  }
+
+  var trendResizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(trendResizeTimer);
+    trendResizeTimer = setTimeout(renderTrends, 150);
+  });
+
   /* ---------- pet & vet details ---------- */
   function telHref(phone) { return 'tel:' + String(phone || '').replace(/[^\d+]/g, ''); }
   function renderProfile() {
@@ -932,6 +1358,7 @@
     renderToday();
     renderLog();
     renderSymptomSummary();
+    renderTrends();
   }
 
   /* ---------- tick: clocks & countdowns ---------- */
@@ -1351,6 +1778,10 @@
   document.addEventListener('click', function (e) {
     var sym = e.target.closest('[data-symptom]');
     if (sym) { logSymptom(sym.getAttribute('data-symptom')); return; }
+    var rg = e.target.closest('[data-trend-range]');
+    if (rg) { trendRange = +rg.getAttribute('data-trend-range'); trendSel = null; renderTrends(); return; }
+    var dayHit = e.target.closest('[data-day]');
+    if (dayHit) { trendSel = +dayHit.getAttribute('data-day'); renderTrends(); return; }
     var ph = e.target.closest('[data-view-photo]');
     if (ph) { viewPhoto(ph.getAttribute('data-view-photo')); return; }
     var btn = e.target.closest('[data-action]');
@@ -1376,6 +1807,21 @@
   // Follow-up edits
   document.addEventListener('change', function (e) {
     var t = e.target;
+    var tf = t.getAttribute && t.getAttribute('data-trend-field');
+    if (tf) {
+      var hrs = parseFloat(t.value);
+      if (!(hrs > 0)) { t.value = trendLimits()[tf]; return; }
+      if (!state.trend) state.trend = defaultTrend();
+      state.trend[tf === 'wee' ? 'weeGapHours' : 'pooGapHours'] = Math.min(240, Math.max(1, hrs));
+      save(); renderTrends(); toast('Saved');
+      return;
+    }
+    if (t.classList && t.classList.contains('dose-select')) {
+      pendingDose[t.getAttribute('data-id')] = parseFloat(t.value);
+      var rx = t.parentNode.querySelector('.rx');   // amber when different from the vet's dose
+      if (rx && rx.getAttribute('data-ml')) rx.classList.toggle('diff', Math.abs(parseFloat(rx.getAttribute('data-ml')) - parseFloat(t.value)) > 0.001);
+      return;
+    }
     var pf = t.getAttribute('data-profile-field');
     if (pf) {
       if (!state.profile) state.profile = defaultProfile();
@@ -1429,7 +1875,7 @@
       document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t === tab); });
       document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('active', v.id === 'view-' + view); });
       if (view === 'settings') renderSettings();
-      else renderAll();
+      else renderAll();   // also draws the charts when the Trends tab is showing
       window.scrollTo(0, 0);
     });
   });
