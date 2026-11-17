@@ -13,11 +13,11 @@
   // 'legacyLabel' is shown for entries logged before the detail fields existed.
   // 'hidden' types no longer have a button but still display (and count) in the log.
   var SYMPTOMS = [
-    { id: 'poo_normal', label: 'Pooed', legacyLabel: 'Pooed', emoji: '💩', tone: 'good', photo: true },
-    { id: 'wee_normal', label: 'Weed', legacyLabel: 'Weed normally', emoji: '🚽', tone: 'good', photo: true },
-    { id: 'vomited', label: 'Vomited', emoji: '🤮', tone: 'bad', photo: true },
-    { id: 'ate_well', label: 'Ate food', legacyLabel: 'Ate well', emoji: '🍽️', tone: 'good' },
-    { id: 'drank', label: 'Drank water', emoji: '💧', tone: 'good' },
+    { id: 'poo_normal', label: 'Pooed', short: 'Poo', legacyLabel: 'Pooed', emoji: '💩', tone: 'good', photo: true },
+    { id: 'wee_normal', label: 'Weed', short: 'Wee', legacyLabel: 'Weed normally', emoji: '🚽', tone: 'good', photo: true },
+    { id: 'vomited', label: 'Vomited', short: 'Vomit', emoji: '🤮', tone: 'bad', photo: true },
+    { id: 'ate_well', label: 'Ate food', short: 'Food', legacyLabel: 'Ate well', emoji: '🍽️', tone: 'good' },
+    { id: 'drank', label: 'Drank water', short: 'Water', emoji: '💧', tone: 'good' },
     { id: 'strained', label: 'Strained', emoji: '😣', tone: 'bad', hidden: true },
     { id: 'blood_wee', label: 'Blood in wee', emoji: '🩸', tone: 'bad', hidden: true },
     { id: 'diarrhoea', label: 'Diarrhoea', emoji: '🟤', tone: 'bad', hidden: true },
@@ -644,10 +644,10 @@
 
   function logSymptom(type) { symptomDialog(type, null); }
 
-  function symptomButtonsHtml() {
+  function symptomButtonsHtml(compact) {
     return SYMPTOMS.filter(function (s) { return !s.hidden; }).map(function (s) {
-      return '<button class="symptom-btn ' + s.tone + '" data-symptom="' + s.id + '">' +
-        '<span class="emoji" aria-hidden="true">' + s.emoji + '</span><span class="sym-label">' + esc(s.label) + '</span></button>';
+      return '<button class="symptom-btn ' + s.tone + '" data-symptom="' + s.id + '" aria-label="Log: ' + esc(s.label) + '">' +
+        '<span class="emoji" aria-hidden="true">' + s.emoji + '</span><span class="sym-label">' + esc(compact && s.short ? s.short : s.label) + '</span></button>';
     }).join('');
   }
 
@@ -709,8 +709,8 @@
         out.push({ bad: false, text: 'No poo logged by day 2 — vet said the dose can be increased to 1 ml (change it in Settings).' });
       }
     }
-    if (st.optional) {
-      out.push({ bad: false, text: st.count24 + ' doses given in the last 24h. Next dose is optional — ' + (med.notes || 'only if needed') });
+    if (st.optional && !med.notes) {
+      out.push({ bad: false, text: 'Next dose is optional.' });
     }
     return out;
   }
@@ -720,56 +720,62 @@
       case 'paused': return '<span class="pill paused">Paused</span>';
       case 'new': return '<span class="pill new">Not started</span>';
       case 'overdue': return '<span class="pill overdue">Overdue</span>';
-      case 'optional': return '<span class="pill soon">Optional dose</span>';
+      case 'optional': return '<span class="pill soon">Optional</span>';
       case 'soon': return '<span class="pill soon">Due soon</span>';
       default: return '<span class="pill ok">On track</span>';
     }
   }
 
+  function fmtShort(ms) {
+    var totalMin = Math.floor(Math.abs(ms) / 60000);
+    var h = Math.floor(totalMin / 60), m = totalMin % 60;
+    if (h > 0) return h + 'h ' + pad(m) + 'm';
+    return m + 'm ' + pad(Math.floor(Math.abs(ms) / 1000) % 60) + 's';
+  }
+  function fmtWhen(d) {
+    if (d.toDateString() === new Date().toDateString()) return fmtTime(d);
+    return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + fmtTime(d);
+  }
+
+  // Compact, side-by-side timer tiles for active medications; paused ones as a single line.
   function renderMeds() {
     var now = Date.now();
-    var html = state.meds.map(function (med) {
+    var tiles = '', paused = '';
+    state.meds.forEach(function (med) {
       var st = medStatus(med, now);
-      var h = '<div class="card med state-' + st.state + '" data-med="' + esc(med.id) + '" data-state="' + st.state + '">';
-      h += '<div class="med-head"><div><h3>' + esc(med.name) + '</h3><div class="med-purpose">' + esc(med.purpose) + '</div></div>' + statusPill(st) + '</div>';
-      h += '<div class="dose-big">' + esc(med.dose) + '</div>';
-      h += '<div class="muted">' + esc(med.schedule) + '</div>';
-
       if (med.paused) {
-        h += '<p class="paused-note">' + esc(med.pausedNote || 'Paused') + '</p>';
-        h += '<p class="note">To restart, untick “Paused” in Settings (only after checking with the vet).</p>';
-        return h + '</div>';
+        paused += '<div class="paused-row" data-med="' + esc(med.id) + '" data-state="paused"><strong>' + esc(med.name) + '</strong> ' +
+          '<span class="pill paused">Paused</span> <span>' + esc(med.pausedNote || '') + '</span></div>';
+        return;
       }
-
-      if (med.notes) h += '<p class="med-note">' + esc(med.notes) + '</p>';
-      medWarnings(med, st).forEach(function (w) {
-        h += '<div class="med-warn' + (w.bad ? ' bad' : '') + '">' + esc(w.text) + '</div>';
-      });
-
-      h += '<dl class="med-rows">';
+      var h = '<div class="med-tile state-' + st.state + '" data-med="' + esc(med.id) + '" data-state="' + st.state + '">';
+      h += '<div class="tile-head"><span class="tile-name">' + esc(med.name) + '</span>' + statusPill(st) + '</div>';
+      h += '<div class="tile-dose">' + esc(med.dose) + '</div>';
       if (st.state === 'new') {
-        h += '<dt>Last dose</dt><dd>None logged yet</dd>';
-        h += '<dt>Next due</dt><dd>When you give the first dose</dd>';
+        h += '<div class="tile-label">Not started</div><div class="tile-meta">Tap “Given now” after the first dose</div>';
       } else {
-        h += '<dt>Last dose</dt><dd>' + esc(fmtDayTime(new Date(st.lastT))) + (st.last.dose && st.last.dose !== med.dose ? ' (' + esc(st.last.dose) + ')' : '') + '</dd>';
-        h += '<dt>Next due</dt><dd>' + esc(fmtDayTime(new Date(st.next))) + '</dd>';
-        h += '<dt>' + (st.diff <= 0 ? 'Overdue by' : 'Due in') + '</dt><dd class="countdown" data-countdown="' + st.next + '">' + fmtDuration(Math.abs(st.diff)) + '</dd>';
-        h += '<dt>Last 24h</dt><dd>' + st.count24 + ' dose' + (st.count24 === 1 ? '' : 's') + '</dd>';
+        h += '<div class="tile-label">' + (st.diff <= 0 ? 'Overdue by' : 'Due in') + '</div>';
+        h += '<div class="tile-count" data-countdown="' + st.next + '" data-fmt="short">' + fmtShort(st.diff) + '</div>';
+        h += '<div class="tile-meta">Next <strong>' + esc(fmtWhen(new Date(st.next))) + '</strong></div>';
+        h += '<div class="tile-meta">Last ' + esc(fmtWhen(new Date(st.lastT))) + (st.last.dose && st.last.dose !== med.dose ? ' (' + esc(st.last.dose) + ')' : '') + '</div>';
+        h += '<div class="tile-meta">' + st.count24 + ' dose' + (st.count24 === 1 ? '' : 's') + ' in 24h</div>';
       }
-      h += '</dl>';
-
-      h += '<button class="btn btn-big" data-action="given" data-id="' + esc(med.id) + '">Given now</button>';
-      h += '<div class="btn-row">';
-      h += '<button class="btn btn-secondary btn-small" data-action="earlier" data-id="' + esc(med.id) + '">Given at another time</button>';
-      if (st.last) h += '<button class="btn btn-secondary btn-small" data-action="edit-last" data-id="' + esc(st.last.id) + '">Edit last dose</button>';
-      h += '</div>';
-      return h + '</div>';
-    }).join('');
-    $('#med-list').innerHTML = html || '<div class="card muted">No medications. Add one in Settings.</div>';
+      if (med.notes) h += '<div class="tile-note">' + esc(med.notes) + '</div>';
+      medWarnings(med, st).forEach(function (w) {
+        h += '<div class="tile-warn' + (w.bad ? ' bad' : '') + '">' + esc(w.text) + '</div>';
+      });
+      h += '<button class="btn tile-given" data-action="given" data-id="' + esc(med.id) + '">Given now</button>';
+      h += '<div class="tile-links"><button class="link-btn" data-action="earlier" data-id="' + esc(med.id) + '">Earlier time</button>';
+      if (st.last) h += '<button class="link-btn" data-action="edit-last" data-id="' + esc(st.last.id) + '">Edit last</button>';
+      h += '</div></div>';
+      tiles += h;
+    });
+    $('#med-list').innerHTML = (tiles || paused) ? '<div class="med-grid">' + tiles + '</div>' + paused
+      : '<div class="card muted">No medications. Add one in Settings.</div>';
 
     var overdue = state.meds.filter(function (m) { return medStatus(m, now).state === 'overdue'; });
     var banner = $('#overdue-banner');
-    if (overdue.length) {
+    if (!banner) { /* tiles show overdue clearly */ } else if (overdue.length) {
       banner.textContent = 'Overdue: ' + overdue.map(function (m) { return m.name; }).join(', ');
       banner.classList.remove('hidden');
     } else {
@@ -933,7 +939,7 @@
     var now = Date.now();
     $('#clock').textContent = fmtTime(new Date(now));
     var needsRender = false;
-    document.querySelectorAll('.med[data-med]').forEach(function (card) {
+    document.querySelectorAll('[data-med][data-state]').forEach(function (card) {
       var med = medById(card.getAttribute('data-med'));
       if (med && medStatus(med, now).state !== card.getAttribute('data-state')) needsRender = true;
     });
@@ -945,7 +951,8 @@
     }
     if (needsRender) { renderLive(); }
     document.querySelectorAll('[data-countdown]').forEach(function (el) {
-      el.textContent = fmtDuration(Math.abs(+el.getAttribute('data-countdown') - now));
+      var ms = +el.getAttribute('data-countdown') - now;
+      el.textContent = el.getAttribute('data-fmt') === 'short' ? fmtShort(ms) : fmtDuration(Math.abs(ms));
     });
     checkNotifications(now);
   }
@@ -1443,7 +1450,7 @@
   // Ask the browser not to evict our data (log + photos) when space is low.
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
   $('#symptom-buttons').innerHTML = symptomButtonsHtml();
-  $('#symptom-buttons-today').innerHTML = symptomButtonsHtml();
+  $('#symptom-buttons-today').innerHTML = symptomButtonsHtml(true);
   save();
   renderAll();
   renderSettings();

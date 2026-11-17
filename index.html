@@ -45,47 +45,49 @@
 
   <main>
     <!-- TODAY -->
-    <section id="view-today" class="view view-cols active" aria-label="Today">
-      <div class="card vet-alert">
-        <h2>Call the vet if…</h2>
-        <ul class="checklist">
-          <li>She is <strong>not pooing</strong></li>
-          <li>There is <strong>blood in her wee</strong></li>
-          <li>She is <strong>straining to wee with nothing passing</strong></li>
-        </ul>
-        <div id="vet-flags"></div>
-        <a class="btn btn-call" data-vet-call href="tel:01926400255">
-          <svg class="ico"><use href="#i-phone"/></svg>
-          <span>Call <span data-vet-name>Avondale, Warwick</span><span class="call-number" data-vet-phone>01926 400 255</span></span>
-        </a>
-      </div>
-
-      <div id="overdue-banner" class="banner overdue hidden"></div>
-      <div id="review-card"></div>
+    <section id="view-today" class="view active" aria-label="Today">
+      <div id="vet-flags"></div>
 
       <div id="med-list"></div>
 
-      <div class="card">
-        <h2>Log an activity</h2>
-        <div id="symptom-buttons-today" class="symptom-grid"></div>
+      <div class="card quick-card">
+        <h2>Quick log</h2>
+        <div id="symptom-buttons-today" class="symptom-grid quick-grid"></div>
         <p id="last-poo" class="muted small"></p>
       </div>
 
-      <div class="card">
-        <h2>Follow-up reminders</h2>
-        <div id="followups"></div>
-      </div>
+      <div class="today-rest">
+        <div class="card vet-alert">
+          <h2>Call the vet if…</h2>
+          <ul class="checklist">
+            <li>She is <strong>not pooing</strong></li>
+            <li>There is <strong>blood in her wee</strong></li>
+            <li>She is <strong>straining to wee with nothing passing</strong></li>
+          </ul>
+          <a class="btn btn-call" data-vet-call href="tel:01926400255">
+            <svg class="ico"><use href="#i-phone"/></svg>
+            <span>Call <span data-vet-name>Avondale, Warwick</span><span class="call-number" data-vet-phone>01926 400 255</span></span>
+          </a>
+        </div>
 
-      <div class="card">
-        <h2>Notifications</h2>
-        <p id="notify-status" class="muted"></p>
-        <button id="btn-notify" class="btn btn-secondary">Turn on dose notifications</button>
-        <p class="note">
-          <strong>iPhone note:</strong> iPhones only show these alerts while Poorly Pet is
-          <strong>open</strong>, and only if it has been <strong>added to the Home Screen</strong>
-          (Safari → Share → “Add to Home Screen”, iOS 16.4 or later) and opened from there.
-          Don’t rely on notifications alone — set a phone alarm as a backup.
-        </p>
+        <div id="review-card"></div>
+
+        <div class="card">
+          <h2>Follow-up reminders</h2>
+          <div id="followups"></div>
+        </div>
+
+        <div class="card">
+          <h2>Notifications</h2>
+          <p id="notify-status" class="muted"></p>
+          <button id="btn-notify" class="btn btn-secondary">Turn on dose notifications</button>
+          <p class="note">
+            <strong>iPhone note:</strong> iPhones only show these alerts while Poorly Pet is
+            <strong>open</strong>, and only if it has been <strong>added to the Home Screen</strong>
+            (Safari → Share → “Add to Home Screen”, iOS 16.4 or later) and opened from there.
+            Don’t rely on notifications alone — set a phone alarm as a backup.
+          </p>
+        </div>
       </div>
     </section>
 
