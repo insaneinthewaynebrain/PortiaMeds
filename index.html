@@ -162,11 +162,8 @@
       </div>
 
       <div class="card">
-        <h2>Alert limits</h2>
-        <p class="muted small">If she goes longer than this without a wee or poo being logged, the day is flagged in red and its score drops.</p>
-        <label class="field"><span>Longest time without a wee (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="wee"></label>
-        <label class="field"><span>Longest time without a poo (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="poo"></label>
-        <p class="note">The “Call the vet” poo reminder on the Today screen still uses the vet’s 48 hours; this limit only affects the graph.</p>
+        <h2>About the score</h2>
+        <p class="muted small" id="trend-limits-note"></p>
         <details class="how">
           <summary>How the score works</summary>
           <ul>
@@ -194,6 +191,14 @@
         <h2>Medications</h2>
         <div id="med-settings"></div>
         <button id="btn-add-med" class="btn btn-secondary">+ Add medication</button>
+      </div>
+
+      <div class="card">
+        <h2>Health trend alerts</h2>
+        <p class="muted small">If she goes longer than this without a wee or poo being logged, that day is flagged in red on the Trends screen and its score drops.</p>
+        <label class="field"><span>No wee for (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="wee"></label>
+        <label class="field"><span>No poo for (hours)</span><input type="number" inputmode="decimal" min="1" max="240" step="1" data-trend-field="poo"></label>
+        <p class="note">Defaults: wee 24 h, poo 48 h. The “Call the vet” poo reminder on Today still uses the vet’s 48 hours; these limits only affect the graph.</p>
       </div>
 
       <div class="card">

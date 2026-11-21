@@ -66,9 +66,10 @@
         { value: 'Bright', label: 'Bright', text: 'bright', score: 4 },
         { value: 'Energetic & happy', label: 'Energetic & happy', text: 'energetic & happy', score: 5 }] },
       { name: 'extras', label: 'Also noticed (optional)', multi: true, options: [
-        { value: 'Hiding', label: 'Hiding', text: 'hiding' },
+        { value: 'Hiding', label: 'Hiding', text: 'hiding', bad: true },
         { value: 'Playful', label: 'Playful', text: 'playful' },
-        { value: 'Grooming well', label: 'Grooming well', text: 'grooming well' }] }
+        { value: 'Grooming well', label: 'Grooming well', text: 'grooming well' },
+        { value: 'Off her food', label: 'Off her food', text: 'off her food', bad: true }] }
     ]
   };
   function checkScore(e) {
@@ -126,7 +127,19 @@
   }
 
   function defaultTrend() {
-    return { weeGapHours: 12, pooGapHours: 48 };
+    return { weeGapHours: 24, pooGapHours: 48, v: 2 };
+  }
+  // The first version saved its untouched default (wee 12h) on the phone. Switch that to the new
+  // default once; anything else the user set is kept. Only these two settings are touched, never the log.
+  function migrateTrend(t) {
+    if (!t || typeof t !== 'object') return defaultTrend();
+    var out = {};
+    Object.keys(t).forEach(function (k) { out[k] = t[k]; });
+    if (!out.v) {
+      if (Number(out.weeGapHours) === 12) out.weeGapHours = 24;
+      out.v = 2;
+    }
+    return out;
   }
 
   function defaultProfile() {
@@ -173,7 +186,7 @@
       reviewDone: !!s.reviewDone,
       notified: (s.notified && typeof s.notified === 'object') ? s.notified : {},
       profile: (s.profile && typeof s.profile === 'object') ? s.profile : defaultProfile(),
-      trend: (s.trend && typeof s.trend === 'object') ? s.trend : defaultTrend()
+      trend: migrateTrend(s.trend)
     };
   }
 
@@ -338,6 +351,38 @@
     if (h) h(dlg.returnValue, dlg);
   });
 
+  /* ---------- no future entries ---------- */
+  // Logging records what has already happened, so every log time must be now or earlier.
+  // (Upcoming doses, the 48-hour review and follow-up dates are schedules, not log entries.)
+  var FUTURE_MSG = "You can't log something in the future. Please choose now or an earlier time.";
+  function isFuture(localValue) {
+    var t = fromLocalInput(localValue);
+    return !!t && t.getTime() > Date.now();
+  }
+  function timeFieldHtml(label, value) {
+    return '<label class="field"><span>' + label + '</span><input type="datetime-local" name="time" required data-no-future max="' +
+      toLocalInput(new Date()) + '" value="' + value + '"></label>' +
+      '<div class="dialog-error hidden" data-future-msg role="alert"></div>';
+  }
+  // Refresh the max (a dialog may have been open a while), mark the field invalid and show the message.
+  function checkNoFuture(input) {
+    var bad = isFuture(input.value);
+    input.max = toLocalInput(new Date());
+    input.setCustomValidity(bad ? FUTURE_MSG : '');
+    var box = document.querySelector('#dialog-body [data-future-msg]');
+    if (box) { box.textContent = bad ? FUTURE_MSG : ''; box.classList.toggle('hidden', !bad); }
+    return !bad;
+  }
+  function onTimeEdit(ev) {
+    if (ev.target.matches && ev.target.matches('input[data-no-future]')) checkNoFuture(ev.target);
+  }
+  $('#dialog-body').addEventListener('input', onTimeEdit);
+  $('#dialog-body').addEventListener('change', onTimeEdit);
+  // Runs before the form validates, so a stale max can't let a future time through.
+  $('#dialog-ok').addEventListener('click', function () {
+    document.querySelectorAll('#dialog-body input[data-no-future]').forEach(checkNoFuture);
+  }, true);
+
   /* ---------- dose logging ---------- */
   // Dose picker: 0.1 - 3.0 ml. The "remembered" dose is simply the last logged dose for that
   // medication (read from the log, so nothing extra is stored). No doses yet -> 0.5 ml.
@@ -375,6 +420,7 @@
   }
 
   function logDose(medId, time, note, amount) {
+    if (time.getTime() > Date.now() + 1000) { alert(FUTURE_MSG); return null; }   // last line of defence
     var med = medById(medId);
     var amt = (typeof amount === 'number' && isFinite(amount)) ? amount : selectedDose(medId);
     var dose = { id: uid(), medId: medId, time: time.toISOString(), dose: doseText(med, amt), amountMl: amt, note: note || '' };
@@ -404,16 +450,17 @@
     var med = medById(medId);
     var body =
       '<p class="muted">Use this if you gave ' + esc(med.name) + ' earlier and are logging it late.</p>' +
-      '<label class="field"><span>Time given</span><input type="datetime-local" name="time" required value="' + toLocalInput(new Date()) + '"></label>' +
+      timeFieldHtml('Time given', toLocalInput(new Date())) +
       '<label class="field"><span>Dose</span>' + doseSelectHtml('name="doseml"', selectedDose(medId)) + '</label>' +
       '<label class="field"><span>Note (optional)</span><textarea name="note" placeholder="e.g. took it with food, spat some out"></textarea></label>';
     openDialog('Log ' + med.name + ' at another time', body, function (rv, dlg) {
       if (rv !== 'ok') return;
-      var t = fromLocalInput(dlg.querySelector('[name=time]').value);
+      var tval = dlg.querySelector('[name=time]').value;
+      var t = fromLocalInput(tval);
       if (!t) return;
-      if (t.getTime() > Date.now() + 5 * 60000 && !confirm('That time is in the future. Log it anyway?')) return;
+      if (isFuture(tval)) { alert(FUTURE_MSG); return; }
       var amt = parseFloat(dlg.querySelector('[name=doseml]').value);
-      logDose(medId, t, dlg.querySelector('[name=note]').value.trim(), amt);
+      if (!logDose(medId, t, dlg.querySelector('[name=note]').value.trim(), amt)) return;
       toast(med.name + ' ' + amt.toFixed(1) + ' ml logged for ' + fmtDayTime(t));
     }, 'Log dose');
   }
@@ -439,7 +486,7 @@
       title = 'Edit: ' + (sym ? sym.label : entry.type);
     }
     var body =
-      '<label class="field"><span>Time</span><input type="datetime-local" name="time" required value="' + toLocalInput(new Date(entry.time)) + '"></label>' +
+      timeFieldHtml('Time', toLocalInput(new Date(entry.time))) +
       extra +
       '<label class="field"><span>Note</span><textarea name="note">' + esc(entry.note) + '</textarea></label>' +
       '<button value="delete" class="btn btn-danger" formnovalidate>Delete this entry</button>';
@@ -453,6 +500,7 @@
       }
       if (rv !== 'ok') return;
       var tv = dlg.querySelector('[name=time]').value;
+      if (isFuture(tv)) { alert(FUTURE_MSG); return; }
       var t = fromLocalInput(tv);
       if (t && tv !== toLocalInput(new Date(entry.time))) entry.time = t.toISOString();
       entry.note = dlg.querySelector('[name=note]').value.trim();
@@ -633,8 +681,7 @@
     var fields = ENTRY_FIELDS[type] || [];
     pendingPhoto = null;
     var initialTime = toLocalInput(isNew ? new Date() : new Date(entry.time));
-    var body = '<label class="field"><span>Time</span><input type="datetime-local" name="time" required value="' +
-      initialTime + '"></label>';
+    var body = timeFieldHtml('Time', initialTime);
     fields.forEach(function (f) {
       var current = f.multi ? (isNew ? [] : (entry[f.name] || [])) : (isNew ? (f.def || '') : fieldValue(entry, f));
       body += '<div class="field"><span>' + esc(f.label) + '</span>' + segHtml(f.name, f.options, current, f) + '</div>';
@@ -663,6 +710,7 @@
       if (rv !== 'ok') return;
       var e = entry || { id: uid(), type: type, time: new Date().toISOString(), note: '' };
       var timeVal = dlg.querySelector('[name=time]').value;
+      if (isFuture(timeVal)) { alert(FUTURE_MSG); return; }
       var t = fromLocalInput(timeVal);
       // Only change the stored time if it was edited (keeps the exact original seconds otherwise).
       if (t && timeVal !== initialTime) e.time = t.toISOString();
@@ -967,7 +1015,15 @@
   }
 
   /* ---------- rendering: Settings ---------- */
+  function syncTrendInputs() {
+    var lim = trendLimits();
+    document.querySelectorAll('[data-trend-field]').forEach(function (inp) {
+      if (document.activeElement !== inp) inp.value = lim[inp.getAttribute('data-trend-field')];
+    });
+  }
+
   function renderSettings() {
+    syncTrendInputs();
     $('#med-settings').innerHTML = state.meds.map(function (m) {
       var f = function (label, field, type, extra) {
         var v = m[field] == null ? '' : m[field];
@@ -1025,7 +1081,7 @@
   function trendLimits() {
     var t = state.trend || {};
     var w = Number(t.weeGapHours), p = Number(t.pooGapHours);
-    return { wee: w > 0 ? w : 12, poo: p > 0 ? p : 48 };
+    return { wee: w > 0 ? w : 24, poo: p > 0 ? p : 48 };
   }
   // Which timeline lane an activity belongs to. Older entry types still count.
   function eventKind(type) {
@@ -1092,11 +1148,12 @@
       var day = { date: dsD, start: ds, end: de, hasData: false, score: null, warn: false };
       if (we <= ws) return day;
       var winH = (we - ws) / HOUR;
-      var p = { checkSum: 0, checkN: 0, eatPts: 0, drinkPts: 0, food: 0, water: 0, wee: 0, poo: 0, vomit: 0, dose: 0, symptoms: 0 };
+      var p = { checkSum: 0, checkN: 0, eatPts: 0, drinkPts: 0, food: 0, water: 0, wee: 0, poo: 0, vomit: 0, dose: 0, symptoms: 0, tags: [] };
       state.symptoms.forEach(function (s) {
         var t = new Date(s.time).getTime();
         if (!(t >= ds && t < de)) return;
         p.symptoms++;
+        if (s.type === 'check' && Array.isArray(s.extras)) s.extras.forEach(function (x) { if (p.tags.indexOf(x) === -1) p.tags.push(x); });
         var sc = s.type === 'check' ? checkScore(s) : null;
         if (sc != null) { p.checkSum += sc; p.checkN++; }
         switch (eventKind(s.type)) {
@@ -1297,6 +1354,7 @@
       h += '<div class="flag">Over the limit: ' + esc(w.join('; ')) + '</div>';
     }
     h += row('Visual check', p.checkN ? p.checkAvg.toFixed(1) + ' / 5 (' + p.checkN + ' check' + (p.checkN === 1 ? '' : 's') + ')' : 'not logged (left out)', c.check);
+    if (p.tags.length) h += '<div class="detail-row"><span class="dl">Tags</span><span class="dv">' + esc(p.tags.join(', ')) + '</span><span class="dp"></span></div>';
     h += row('Eating', p.food + ' logged', c.eat);
     h += row('Drinking', p.water + ' logged', c.drink);
     h += row('Wee', p.wee + ' logged · longest gap ' + fmtGapH(p.weeGap), c.wee, day.weeOver);
@@ -1314,9 +1372,10 @@
       b.classList.toggle('active', +b.getAttribute('data-trend-range') === trendRange);
       b.setAttribute('aria-pressed', +b.getAttribute('data-trend-range') === trendRange ? 'true' : 'false');
     });
-    document.querySelectorAll('[data-trend-field]').forEach(function (inp) {
-      if (document.activeElement !== inp) inp.value = trendLimits()[inp.getAttribute('data-trend-field')];
-    });
+    var lm = trendLimits();
+    var note = $('#trend-limits-note');
+    if (note) note.innerHTML = 'Alert limits: no wee for <strong>' + lm.wee + 'h</strong>, no poo for <strong>' + lm.poo + 'h</strong>. ' +
+      '<button type="button" class="link-btn inline" data-goto="settings">Change in Settings</button>';
     if (!data) {
       $('#trend-summary').innerHTML = '<p class="muted">Nothing logged yet. Once you log doses and activities, her trend will appear here.</p>';
       $('#trend-chart').innerHTML = ''; $('#trend-detail').innerHTML = ''; $('#timeline-chart').innerHTML = '';
@@ -1778,6 +1837,8 @@
   document.addEventListener('click', function (e) {
     var sym = e.target.closest('[data-symptom]');
     if (sym) { logSymptom(sym.getAttribute('data-symptom')); return; }
+    var go = e.target.closest('[data-goto]');
+    if (go) { var tb = document.querySelector('.tab[data-view=' + go.getAttribute('data-goto') + ']'); if (tb) tb.click(); return; }
     var rg = e.target.closest('[data-trend-range]');
     if (rg) { trendRange = +rg.getAttribute('data-trend-range'); trendSel = null; renderTrends(); return; }
     var dayHit = e.target.closest('[data-day]');

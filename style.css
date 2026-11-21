@@ -664,3 +664,11 @@ details.how { margin-top: 12px; font-size: 0.92rem; }
 details.how summary { cursor: pointer; font-weight: 600; color: var(--accent-strong); min-height: 36px; display: flex; align-items: center; }
 details.how ul { margin: 4px 0 0; padding-left: 1.2em; color: var(--muted); }
 details.how li { margin: 6px 0; }
+
+/* No future entries: inline message + red field */
+.dialog-error {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-size: 0.95rem; font-weight: 600;
+  background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad);
+}
+input[data-no-future]:invalid { border-color: var(--bad); outline-color: var(--bad); }
+.link-btn.inline { display: inline; min-height: 0; padding: 0; text-decoration: underline; font-size: inherit; }
